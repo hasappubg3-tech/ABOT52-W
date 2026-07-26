@@ -357,10 +357,14 @@ def create_app() -> Flask:
         if not btn:
             abort(404)
         children   = _children(bid)
-        # القوائم الفرعية: أُبقي فقط ما يتعلق بالملازم/الكتب/الملخصات أو الصفوف الدراسية
-        menus      = [c for c in children if c.get("type") != "content"
-                      and (_is_allowed_menu(c) or _is_grade_menu(c))]
-        contents   = [_enrich(c) for c in children if c.get("type") == "content" and _is_allowed_content(c)]
+        # نُطبّق فلتر القوائم فقط إذا كنا مباشرةً داخل صف دراسي (parent_id=None)
+        # في المستويات الأعمق (داخل ملازم/كتب/ملخصات) نعرض كل شيء
+        if btn.get("parent_id") is None:
+            menus = [c for c in children if c.get("type") != "content"
+                     and _is_allowed_menu(c)]
+        else:
+            menus = [c for c in children if c.get("type") != "content"]
+        contents   = [_enrich(c) for c in children if c.get("type") == "content"]
         breadcrumb = _breadcrumb(bid)
         return render_template("category.html",
             btn=btn,
