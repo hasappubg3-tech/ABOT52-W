@@ -39,6 +39,14 @@ def strip_emoji(text) -> str:
     return _EMOJI_RE.sub("", str(text)).strip()
 
 NEW_DAYS        = 14      # عدد الأيام لاعتبار الملزمة "جديدة"
+
+# ── الأنواع المسموح بها من المحتوى ───────────────────────────────────
+_ALLOWED_KEYWORDS = ["ملزمة", "ملزمه", "كتاب", "ملخص"]
+
+def _is_allowed_content(btn: dict) -> bool:
+    """يُعيد True فقط إذا كانت التسمية تنتمي لملزمة أو كتاب أو ملخص."""
+    label = btn.get("label", "")
+    return any(kw in label for kw in _ALLOWED_KEYWORDS)
 _PDF_THUMB_DIR  = "/tmp/pdf_thumbs"
 _PDF_THUMB_TTL  = 86400   # يوم كامل
 
@@ -276,18 +284,18 @@ def _search_content(q: str, limit: int = 50) -> list:
         "deleted": {"$ne": 1},
         "hidden":  {"$ne": 1},
         "label":   {"$regex": q, "$options": "i"}
-    }).limit(limit))
-    return [_enrich(d) for d in docs]
+    }).limit(limit * 3))  # نجلب أكثر للتعويض بعد الفلترة
+    return [_enrich(d) for d in docs if _is_allowed_content(d)][:limit]
 
 
 def _latest_notes(limit: int = 8) -> list:
-    """أحدث الملازم المضافة."""
+    """أحدث الملازم والكتب والملخصات المضافة."""
     docs = list(_col("buttons").find({
         "type":    "content",
         "deleted": {"$ne": 1},
         "hidden":  {"$ne": 1},
-    }).sort("created_at", -1).limit(limit))
-    return [_enrich(d) for d in docs]
+    }).sort("created_at", -1).limit(limit * 5))  # نجلب أكثر للتعويض بعد الفلترة
+    return [_enrich(d) for d in docs if _is_allowed_content(d)][:limit]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -302,7 +310,8 @@ def create_app() -> Flask:
     # ── الصفحة الرئيسية ──────────────────────────────────────────────
     @app.route("/")
     def index():
-        categories = _children(None)
+        # أُظهر فقط القوائم (صفوف دراسية) — نُخفي الأزرار من نوع content في الجذر
+        categories = [c for c in _children(None) if c.get("type") != "content"]
         latest     = _latest_notes(8)
         return render_template("index.html",
             categories=categories,
@@ -324,7 +333,7 @@ def create_app() -> Flask:
             abort(404)
         children   = _children(bid)
         menus      = [c for c in children if c.get("type") != "content"]
-        contents   = [_enrich(c) for c in children if c.get("type") == "content"]
+        contents   = [_enrich(c) for c in children if c.get("type") == "content" and _is_allowed_content(c)]
         breadcrumb = _breadcrumb(bid)
         return render_template("category.html",
             btn=btn,
@@ -418,10 +427,11 @@ def create_app() -> Flask:
             "deleted": {"$ne": 1},
             "hidden":  {"$ne": 1},
             "label":   {"$regex": q, "$options": "i"}
-        }).limit(15))
+        }).limit(50))
+        filtered = [d for d in docs if _is_allowed_content(d)][:15]
         return jsonify([
             {"id": d["id"], "label": d.get("label", ""), "url": f"/note/{d['id']}"}
-            for d in docs
+            for d in filtered
         ])
 
     # ── Thumbnail: أول صفحة من PDF ────────────────────────────────────
