@@ -40,13 +40,37 @@ def strip_emoji(text) -> str:
 
 NEW_DAYS        = 14      # عدد الأيام لاعتبار الملزمة "جديدة"
 
-# ── الأنواع المسموح بها من المحتوى ───────────────────────────────────
-_ALLOWED_KEYWORDS = ["ملزمة", "ملزمه", "كتاب", "ملخص"]
+# ── الأنواع المسموح بها ──────────────────────────────────────────────
+# حرف التطويل العربي (kashida) — يُزال قبل مقارنة التسميات
+_TATWEEL = "\u0640"
+
+def _clean(label: str) -> str:
+    """يُزيل التطويل والإيموجي ليتبقى النص العربي الصريح."""
+    return label.replace(_TATWEEL, "")
+
+# كلمات تدل على قائمة ملازم/كتب/ملخصات (للقوائم الفرعية)
+_MENU_WHITELIST = ["ملازم", "ملزمة", "ملزمه", "كتب", "كتاب", "ملخص", "ملخصات"]
+# كلمات تدل على صف دراسي (للقوائم الجذرية)
+_GRADE_KEYWORDS = ["أول", "ثاني", "ثالث", "رابع", "خامس", "سادس", "سابع", "ثامن",
+                   "اول", "متوسط", "إعدادي", "اعدادي", "ابتدائي",
+                   "العلمي", "الأدبي", "الادبي"]
+# كلمات تدل على محتوى مسموح به (للأزرار من نوع content)
+_CONTENT_WHITELIST = ["ملزمة", "ملزمه", "كتاب", "ملخص"]
+
+def _is_grade_menu(btn: dict) -> bool:
+    """يُعيد True إذا كانت القائمة تمثّل صفاً دراسياً."""
+    label = _clean(btn.get("label", ""))
+    return any(kw in label for kw in _GRADE_KEYWORDS)
+
+def _is_allowed_menu(btn: dict) -> bool:
+    """يُعيد True إذا كانت القائمة الفرعية تنتمي لملازم/كتب/ملخصات فقط."""
+    label = _clean(btn.get("label", ""))
+    return any(kw in label for kw in _MENU_WHITELIST)
 
 def _is_allowed_content(btn: dict) -> bool:
     """يُعيد True فقط إذا كانت التسمية تنتمي لملزمة أو كتاب أو ملخص."""
-    label = btn.get("label", "")
-    return any(kw in label for kw in _ALLOWED_KEYWORDS)
+    label = _clean(btn.get("label", ""))
+    return any(kw in label for kw in _CONTENT_WHITELIST)
 _PDF_THUMB_DIR  = "/tmp/pdf_thumbs"
 _PDF_THUMB_TTL  = 86400   # يوم كامل
 
@@ -310,8 +334,9 @@ def create_app() -> Flask:
     # ── الصفحة الرئيسية ──────────────────────────────────────────────
     @app.route("/")
     def index():
-        # أُظهر فقط القوائم (صفوف دراسية) — نُخفي الأزرار من نوع content في الجذر
-        categories = [c for c in _children(None) if c.get("type") != "content"]
+        # الصفحة الرئيسية: فقط القوائم التي تمثّل صفوفاً دراسية
+        categories = [c for c in _children(None)
+                      if c.get("type") != "content" and _is_grade_menu(c)]
         latest     = _latest_notes(8)
         return render_template("index.html",
             categories=categories,
@@ -332,7 +357,9 @@ def create_app() -> Flask:
         if not btn:
             abort(404)
         children   = _children(bid)
-        menus      = [c for c in children if c.get("type") != "content"]
+        # القوائم الفرعية: أُبقي فقط ما يتعلق بالملازم/الكتب/الملخصات أو الصفوف الدراسية
+        menus      = [c for c in children if c.get("type") != "content"
+                      and (_is_allowed_menu(c) or _is_grade_menu(c))]
         contents   = [_enrich(c) for c in children if c.get("type") == "content" and _is_allowed_content(c)]
         breadcrumb = _breadcrumb(bid)
         return render_template("category.html",
