@@ -44,6 +44,26 @@ def strip_emoji(text) -> str:
     return _EMOJI_RE.sub("", str(text)).strip()
 
 NEW_DAYS        = 14      # عدد الأيام لاعتبار الملزمة "جديدة"
+_YEAR_RE = re.compile(r"20\d{2}")
+_TYPE_PRIORITY = [
+    (("ملزمة", "ملزمه", "ملزم"), 0),
+    (("واجبات", "واجب"), 1),
+    (("وزاريات", "وزارية", "وزاري"), 2),
+    (("مراجعة", "مراجعات"), 3),
+]
+
+
+def _compound_sort_key(button: dict) -> tuple:
+    """يطابق ترتيب البوت: أحدث سنة أولاً، ثم أولوية نوع المحتوى في اسم الزر."""
+    label = str(button.get("label") or "")
+    years = _YEAR_RE.findall(label)
+    year = max((int(value) for value in years), default=0)
+    type_priority = 99
+    for keywords, priority in _TYPE_PRIORITY:
+        if any(keyword in label for keyword in keywords):
+            type_priority = priority
+            break
+    return -year, type_priority
 
 # ── الأنواع المسموح بها ──────────────────────────────────────────────
 # حرف التطويل العربي (kashida) — يُزال قبل مقارنة التسميات
@@ -428,6 +448,8 @@ def create_app() -> Flask:
         if not btn:
             abort(404)
         children   = _children(bid)
+        if btn.get("type") == "compound" and btn.get("sort_by_year", 0):
+            children = sorted(children, key=_compound_sort_key)
         # نُطبّق فلتر القوائم فقط إذا كنا مباشرةً داخل صف دراسي (parent_id=None)
         # في المستويات الأعمق (داخل ملازم/كتب/ملخصات) نعرض كل شيء
         if btn.get("parent_id") is None:
