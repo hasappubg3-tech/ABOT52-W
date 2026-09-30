@@ -295,6 +295,18 @@ def _note_display_name(btn: dict) -> str:
     return " ".join(parts)
 
 
+def _attachment_title(item: dict, index: int) -> str:
+    """يستخرج عنوان الفصل أو الملف من الوصف المخزّن مع مرفق البوت."""
+    raw = item.get("content") or item.get("caption") or ""
+    for line in str(raw).splitlines():
+        title = strip_emoji(line)
+        title = re.sub(r"^[\s|:;،\-–—]+", "", title)
+        title = re.sub(r"\s+", " ", title).strip()
+        if title:
+            return title[:160]
+    return f"الملف {index}"
+
+
 def _enrich(btn: dict) -> dict:
     bid = btn["id"]
     return {
@@ -448,9 +460,18 @@ def create_app() -> Flask:
             for it in items
             if it.get("type") == "photo" and it.get("file_id")
         ]
-        # ملفات PDF
-        pdf_items = [it for it in items if it.get("type") == "document" and it.get("file_id")]
-        pdf_url   = _file_url(pdf_items[0]["file_id"]) if pdf_items else None
+        # أظهر جميع الملفات المرفقة بالزر، لا أول ملف فقط.
+        attachments = [
+            {
+                "file_id": it["file_id"],
+                "title": _attachment_title(it, index),
+            }
+            for index, it in enumerate(
+                (it for it in items
+                 if it.get("type") in {"document", "file"} and it.get("file_id")),
+                start=1,
+            )
+        ]
 
         # رابط deep-link للبوت لفتح الملزمة مباشرة
         bot_deep_link = f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
@@ -464,7 +485,7 @@ def create_app() -> Flask:
             display_label=display_label,
             preview_text=preview_text,
             photos=photos,
-            pdf_url=pdf_url,
+            attachments=attachments,
             bot_deep_link=bot_deep_link,
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,

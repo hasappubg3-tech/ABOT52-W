@@ -76,10 +76,10 @@
           <span class="stat-label">صورة</span>
         </div>
         {% endif %}
-        {% if pdf_url %}
+        {% if attachments %}
         <div class="stat-item">
-          <span class="stat-icon">PDF</span>
-          <span class="stat-val">متاح</span>
+          <span class="stat-val">{{ attachments|length }}</span>
+          <span class="stat-label">ملف مرفق</span>
         </div>
         {% endif %}
       </div>
@@ -113,21 +113,29 @@
     </div>
   </div>
 
-  <!-- ══ معاينة PDF ═══════════════════════════════════════════════ -->
-  {% if pdf_url %}
-  <div class="pdf-section">
-    <h2 class="section-title">معاينة الملف</h2>
-    <div class="pdf-wrapper">
-      <object data="{{ pdf_url }}" type="application/pdf" class="pdf-embed">
-        <div class="pdf-fallback">
-          <p>متصفحك لا يدعم عرض PDF مدمجاً</p>
-          <a href="{{ pdf_url }}" target="_blank" class="btn btn--primary">
-            فتح الملف ↗
-          </a>
+  <!-- ══ ملفات الملزمة المرتبطة بزر البوت ═════════════════════════ -->
+  {% if attachments %}
+  <section class="attachment-section">
+    <h2 class="section-title">ملفات الملزمة <span class="attachment-count">{{ attachments|length }}</span></h2>
+    <div class="attachment-list">
+      {% for attachment in attachments %}
+      <article class="attachment-card">
+        <div class="attachment-info">
+          <span class="attachment-index">{{ loop.index }}</span>
+          <div class="attachment-copy">
+            <h3 class="attachment-title">{{ attachment.title | strip_emoji }}</h3>
+            <span class="attachment-meta">ملف {{ loop.index }}</span>
+          </div>
         </div>
-      </object>
+        <a class="btn btn--outline attachment-open"
+           href="/file/{{ attachment.file_id }}"
+           target="_blank" rel="noopener noreferrer">
+          فتح الملف
+        </a>
+      </article>
+      {% endfor %}
     </div>
-  </div>
+  </section>
   {% endif %}
 
   <!-- ══ معرض صور الملزمة ══════════════════════════════════════════ -->

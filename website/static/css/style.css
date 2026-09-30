@@ -929,6 +929,85 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   margin: 0;
 }
 
+/* ── ملفات الملزمة المتعددة ───────────────────────────────────── */
+.attachment-section { margin-top: 2rem; }
+.attachment-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.7rem;
+  height: 1.7rem;
+  margin-inline-start: .35rem;
+  padding: 0 .4rem;
+  border-radius: 999px;
+  background: var(--gold-subtle);
+  color: var(--gold-dark);
+  font-size: .8rem;
+  vertical-align: middle;
+}
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: .65rem;
+}
+.attachment-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.attachment-card:hover {
+  border-color: var(--gold-border);
+  box-shadow: 0 4px 16px rgba(201,162,39,.10);
+}
+.attachment-info {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+.attachment-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2.25rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--gold-border);
+  border-radius: 50%;
+  background: var(--gold-subtle);
+  color: var(--gold-dark);
+  font-weight: 800;
+}
+.attachment-copy { min-width: 0; }
+.attachment-title {
+  color: var(--text);
+  font-size: .95rem;
+  font-weight: 700;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.attachment-meta {
+  display: block;
+  margin-top: .1rem;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+.attachment-open { flex-shrink: 0; white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .attachment-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .attachment-open { justify-content: center; }
+}
+
 /* ── PDF section ─────────────────────────────────────────────── */
 .pdf-section { margin-top: 2rem; }
 
