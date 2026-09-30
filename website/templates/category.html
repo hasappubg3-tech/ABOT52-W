@@ -50,7 +50,11 @@
   {% if contents %}
   <div class="notes-list">
     {% for note in contents %}
+    {% if note.is_attachment %}
+    <a href="/file/{{ note.file_id }}" class="note-card" target="_blank" rel="noopener noreferrer">
+    {% else %}
     <a href="/note/{{ note.id }}" class="note-card">
+    {% endif %}
       <!-- Thumbnail -->
       <div class="note-thumb">
         {% if note.thumb_url %}
@@ -72,6 +76,11 @@
         </div>
 
         <div class="note-meta">
+          {% if note.is_attachment %}
+          <span class="meta-item">
+            <span class="meta-val">{{ note.group_label | strip_emoji }}</span>
+          </span>
+          {% else %}
           {% if note.rating.count > 0 %}
           <span class="meta-item">
             <span class="meta-stars">
@@ -90,9 +99,13 @@
             <span class="meta-val">{{ note.click_count }}</span>
           </span>
           {% endif %}
+          {% endif %}
         </div>
 
         <div class="note-actions">
+          {% if note.is_attachment %}
+          <span class="open-btn">فتح الملف</span>
+          {% else %}
           <span class="open-btn">عرض الملزمة</span>
           <button class="share-btn-sm" onclick="shareNote(event, '{{ note.id }}', '{{ note.display_label | replace("'", "\\'") }}')" title="مشاركة">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -101,6 +114,7 @@
               <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
             </svg>
           </button>
+          {% endif %}
         </div>
       </div>
     </a>

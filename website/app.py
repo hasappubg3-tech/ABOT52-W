@@ -307,6 +307,21 @@ def _attachment_title(item: dict, index: int) -> str:
     return f"الملف {index}"
 
 
+def _file_attachments(items: list) -> list:
+    """يعيد كل ملفات الزر القابلة للعرض مع عناوينها وترتيبها."""
+    return [
+        {
+            "file_id": item["file_id"],
+            "title": _attachment_title(item, index),
+        }
+        for index, item in enumerate(
+            (item for item in items
+             if item.get("type") in {"document", "file"} and item.get("file_id")),
+            start=1,
+        )
+    ]
+
+
 def _enrich(btn: dict) -> dict:
     bid = btn["id"]
     return {
@@ -420,7 +435,25 @@ def create_app() -> Flask:
                      and _is_allowed_menu(c)]
         else:
             menus = [c for c in children if c.get("type") != "content"]
-        contents   = [_enrich(c) for c in children if c.get("type") == "content"]
+        contents = []
+        for child in children:
+            if child.get("type") != "content":
+                continue
+            attachments = _file_attachments(_items(child["id"]))
+            if len(attachments) > 1:
+                # اعرض فصول الملزمة مباشرة في صفحة الأستاذ بدلاً من صفحة تجميع وسيطة.
+                group_label = strip_emoji(child.get("label", ""))
+                contents.extend({
+                    "is_attachment": True,
+                    "file_id": attachment["file_id"],
+                    "display_label": attachment["title"],
+                    "group_label": group_label,
+                    "thumb_url": False,
+                    "is_new": False,
+                    "click_count": 0,
+                } for attachment in attachments)
+            else:
+                contents.append({**_enrich(child), "is_attachment": False})
         breadcrumb = _breadcrumb(bid)
         return render_template("category.html",
             btn=btn,
@@ -461,17 +494,13 @@ def create_app() -> Flask:
             if it.get("type") == "photo" and it.get("file_id")
         ]
         # أظهر جميع الملفات المرفقة بالزر، لا أول ملف فقط.
-        attachments = [
-            {
-                "file_id": it["file_id"],
-                "title": _attachment_title(it, index),
-            }
-            for index, it in enumerate(
-                (it for it in items
-                 if it.get("type") in {"document", "file"} and it.get("file_id")),
-                start=1,
-            )
-        ]
+        attachments = _file_attachments(items)
+
+        # المجموعات متعددة الملفات تُعرض من قائمة القسم مباشرةً.
+        parent_id = btn.get("parent_id")
+        parent_btn = _btn(parent_id) if parent_id is not None else None
+        if len(attachments) > 1 and parent_btn and parent_btn.get("type") != "content":
+            return redirect(url_for("category", bid=parent_id))
 
         # رابط deep-link للبوت لفتح الملزمة مباشرة
         bot_deep_link = f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
