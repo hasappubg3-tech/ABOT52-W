@@ -4,7 +4,7 @@
 <div class="container">
   <div class="page-header">
     <h1 class="page-title">
-      {% if query %}نتائج البحث عن: <span class="gold">{{ query }}</span>
+       {% if query %}نتائج البحث عن: <span class="gold">{{ query | strip_emoji }}</span>
       {% else %}البحث{% endif %}
     </h1>
     {% if results %}
@@ -21,25 +21,25 @@
           <img src="/thumb/{{ note.id }}" alt="{{ note.display_label }}" loading="lazy">
         {% else %}
           <div class="note-thumb-placeholder">
-            <span>{{ (note.display_label or '📄')[0] }}</span>
+            <span>م</span>
           </div>
         {% endif %}
       </div>
       <div class="note-info">
         <div class="note-top">
-          <h3 class="note-title">{{ note.display_label }}</h3>
+          <h3 class="note-title">{{ note.display_label | strip_emoji }}</h3>
           {% if note.is_new %}<span class="badge badge--new">جديد</span>{% endif %}
         </div>
         <div class="note-meta">
           {% if note.rating.count > 0 %}
           <span class="meta-item">
-            <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}⭐{% else %}☆{% endif %}{% endfor %}</span>
+            <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}★{% else %}☆{% endif %}{% endfor %}</span>
             <span class="meta-val">{{ note.rating.avg }}</span>
             <span class="meta-dim">({{ note.rating.count }})</span>
           </span>
           {% endif %}
           {% if note.click_count > 0 %}
-          <span class="meta-item">📥 <span class="meta-val">{{ note.click_count }}</span></span>
+          <span class="meta-item">↓ <span class="meta-val">{{ note.click_count }}</span></span>
           {% endif %}
         </div>
         <div class="note-actions">
@@ -52,8 +52,7 @@
 
   {% elif query %}
   <div class="empty-state">
-    <span class="empty-icon">🔍</span>
-    <p>لا توجد نتائج لـ "<strong>{{ query }}</strong>"</p>
+    <p>لا توجد نتائج لـ "<strong>{{ query | strip_emoji }}</strong>"</p>
     <a href="/" class="bot-cta">العودة للرئيسية</a>
   </div>
   {% endif %}

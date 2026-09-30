@@ -2,39 +2,6 @@
    شبكة الامير التعليمية — الجافاسكريبت الرئيسي
    ═══════════════════════════════════════════════════════════════ */
 
-// ── الوضع الداكن ─────────────────────────────────────────────────
-(function () {
-  const html        = document.documentElement;
-  const toggleBtn   = document.getElementById('theme-toggle');
-  const sunIcon     = toggleBtn?.querySelector('.sun-icon');
-  const moonIcon    = toggleBtn?.querySelector('.moon-icon');
-  const STORAGE_KEY = 'alameer-theme';
-
-  function applyTheme(theme) {
-    html.setAttribute('data-theme', theme);
-    if (sunIcon && moonIcon) {
-      if (theme === 'dark') {
-        sunIcon.classList.add('hidden');
-        moonIcon.classList.remove('hidden');
-      } else {
-        sunIcon.classList.remove('hidden');
-        moonIcon.classList.add('hidden');
-      }
-    }
-  }
-
-  // تحميل التفضيل المحفوظ، الافتراضي دائماً فاتح
-  const saved = localStorage.getItem(STORAGE_KEY);
-  applyTheme(saved || 'light');
-
-  toggleBtn?.addEventListener('click', () => {
-    const current = html.getAttribute('data-theme');
-    const next    = current === 'dark' ? 'light' : 'dark';
-    applyTheme(next);
-    localStorage.setItem(STORAGE_KEY, next);
-  });
-})();
-
 // ── البحث الحي ───────────────────────────────────────────────────
 (function () {
   const toggleBtn    = document.getElementById('search-toggle');
@@ -165,7 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
         this.dataset.errHandled = '1';
         this.style.display = 'none';
         // عرض placeholder نصي
-        const letter = (this.alt || '📄')[0];
+        const letter = (this.alt || 'م')[0];
         const ph = document.createElement('div');
         ph.className = 'note-thumb-placeholder';
         ph.innerHTML = `<span>${letter}</span>`;

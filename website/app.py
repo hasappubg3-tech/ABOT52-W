@@ -16,7 +16,8 @@ SITE_URL     = os.environ.get("SITE_URL", "").rstrip("/")
 
 # ── إزالة الإيموجيات ────────────────────────────────────────────────
 _EMOJI_RE = re.compile(
-    "[\U0001F600-\U0001F64F"
+    "["
+    "\U0001F600-\U0001F64F"
     "\U0001F300-\U0001F5FF"
     "\U0001F680-\U0001F6FF"
     "\U0001F700-\U0001F77F"
@@ -25,10 +26,14 @@ _EMOJI_RE = re.compile(
     "\U0001F900-\U0001F9FF"
     "\U0001FA00-\U0001FA6F"
     "\U0001FA70-\U0001FAFF"
+    "\U0001F1E6-\U0001F1FF"  # regional indicator flags
     "\U00002702-\U000027B0"
-    "\U0000FE0F\U0000200D"
+    "\U0000FE0F"   # variation selector
+    "\U0000200D"   # zero width joiner
+    "\U000020E3"   # combining enclosing keycap (4️⃣ 5️⃣ …)
     "\U00002640-\U00002642"
     "\U00002600-\U00002B55"
+    "\u00a9\u00ae"  # © ®
     "]+",
     flags=re.UNICODE,
 )
@@ -243,7 +248,7 @@ def _parse_content_lines(bid: int) -> dict:
         return {}
 
     raw   = item.get("content", "")
-    lines = [re.sub(r'[⚜️🔸🔹|✨💫⭐★☆]+', '', l).strip() for l in raw.split("\n")]
+    lines = [strip_emoji(re.sub(r'[|★☆]+', '', l)).strip() for l in raw.split("\n")]
     lines = [l.strip(" |–-") for l in lines if l.strip(" |–-")]
 
     title   = ""
@@ -397,6 +402,7 @@ def create_app() -> Flask:
             (it.get("content", "") for it in items if it.get("type") == "text" and it.get("content")),
             ""
         )
+        preview_text = strip_emoji(preview_text)
         # كل الصور — بـ file_id مستقل لكل صورة (إصلاح الغاليري)
         photos = [
             {"file_id": it.get("file_id")}
@@ -461,7 +467,7 @@ def create_app() -> Flask:
         }).limit(50))
         filtered = [d for d in docs if _is_allowed_content(d)][:15]
         return jsonify([
-            {"id": d["id"], "label": d.get("label", ""), "url": f"/note/{d['id']}"}
+            {"id": d["id"], "label": strip_emoji(d.get("label", "")), "url": f"/note/{d['id']}"}
             for d in filtered
         ])
 

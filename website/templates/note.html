@@ -8,10 +8,10 @@
     {% for crumb in breadcrumb %}
       {% if not loop.last %}
         <span class="bc-sep">←</span>
-        <a href="/cat/{{ crumb.id }}" class="bc-item">{{ crumb.label }}</a>
+        <a href="/cat/{{ crumb.id }}" class="bc-item">{{ crumb.label | strip_emoji }}</a>
       {% else %}
         <span class="bc-sep">←</span>
-        <span class="bc-item bc-current">{{ crumb.label }}</span>
+        <span class="bc-item bc-current">{{ crumb.label | strip_emoji }}</span>
       {% endif %}
     {% endfor %}
   </div>
@@ -35,15 +35,15 @@
         <img src="/thumb/{{ btn.id }}" alt="{{ display_label }}" class="cover-img">
       {% else %}
         <div class="cover-placeholder">
-          <span class="cover-letter">{{ (display_label or '📄')[0] }}</span>
-          <span class="cover-label">{{ display_label }}</span>
+          <span class="cover-letter">م</span>
+          <span class="cover-label">{{ display_label | strip_emoji }}</span>
         </div>
       {% endif %}
     </div>
 
     <!-- معلومات الملزمة -->
     <div class="note-detail-info">
-      <h1 class="detail-title">{{ display_label }}</h1>
+      <h1 class="detail-title">{{ display_label | strip_emoji }}</h1>
 
       <!-- تقييم -->
       {% if rating.count > 0 %}
@@ -64,23 +64,22 @@
       <div class="detail-stats">
         {% if btn.click_count %}
         <div class="stat-item">
-          <span class="stat-icon">📥</span>
+          <span class="stat-icon">↓</span>
           <span class="stat-val">{{ btn.click_count }}</span>
           <span class="stat-label">تحميل</span>
         </div>
         {% endif %}
         {% if photos %}
         <div class="stat-item">
-          <span class="stat-icon">🖼️</span>
+          <span class="stat-icon">◻</span>
           <span class="stat-val">{{ photos|length }}</span>
           <span class="stat-label">صورة</span>
         </div>
         {% endif %}
         {% if pdf_url %}
         <div class="stat-item">
-          <span class="stat-icon">📄</span>
-          <span class="stat-val">PDF</span>
-          <span class="stat-label">متاح</span>
+          <span class="stat-icon">PDF</span>
+          <span class="stat-val">متاح</span>
         </div>
         {% endif %}
       </div>
@@ -89,7 +88,7 @@
       {% if preview_text %}
       <div class="note-preview">
         <h3 class="preview-title">وصف المحتوى</h3>
-        <p class="preview-text">{{ preview_text[:400] }}{% if preview_text|length > 400 %}…{% endif %}</p>
+        <p class="preview-text">{{ preview_text[:400] | strip_emoji }}{% if preview_text|length > 400 %}…{% endif %}</p>
       </div>
       {% endif %}
 
@@ -121,7 +120,6 @@
     <div class="pdf-wrapper">
       <object data="{{ pdf_url }}" type="application/pdf" class="pdf-embed">
         <div class="pdf-fallback">
-          <span class="pdf-icon">📄</span>
           <p>متصفحك لا يدعم عرض PDF مدمجاً</p>
           <a href="{{ pdf_url }}" target="_blank" class="btn btn--primary">
             فتح الملف ↗
@@ -140,7 +138,7 @@
       {% for p in photos[:9] %}
       <div class="gallery-item" onclick="openLightbox('{{ p.file_id }}', {{ loop.index0 }})">
         <img src="/file/{{ p.file_id }}" alt="صفحة {{ loop.index }} — {{ display_label }}" loading="lazy">
-        <div class="gallery-overlay"><span>🔍</span></div>
+        <div class="gallery-overlay"><span>+</span></div>
       </div>
       {% endfor %}
       {% if photos|length > 9 %}

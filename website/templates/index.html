@@ -22,7 +22,6 @@
       </div>
     {% else %}
       <div class="empty-state">
-        <span class="empty-icon">📭</span>
         <p>لا يوجد محتوى متاح حالياً</p>
       </div>
     {% endif %}
@@ -41,24 +40,24 @@
             <img src="/thumb/{{ note.id }}" alt="{{ note.display_label }}" loading="lazy">
           {% else %}
             <div class="note-thumb-placeholder">
-              <span>{{ (note.display_label or '📄')[0] }}</span>
+              <span>م</span>
             </div>
           {% endif %}
         </div>
         <div class="note-info">
           <div class="note-top">
-            <h3 class="note-title">{{ note.display_label }}</h3>
+            <h3 class="note-title">{{ note.display_label | strip_emoji }}</h3>
             {% if note.is_new %}<span class="badge badge--new">جديد</span>{% endif %}
           </div>
           <div class="note-meta">
             {% if note.rating.count > 0 %}
             <span class="meta-item">
-              <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}⭐{% else %}☆{% endif %}{% endfor %}</span>
+              <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}★{% else %}☆{% endif %}{% endfor %}</span>
               <span class="meta-val">{{ note.rating.avg }}</span>
             </span>
             {% endif %}
             {% if note.click_count > 0 %}
-            <span class="meta-item">📥 <span class="meta-val">{{ note.click_count }}</span></span>
+            <span class="meta-item">↓ <span class="meta-val">{{ note.click_count }}</span></span>
             {% endif %}
           </div>
           <div class="note-actions">
