@@ -318,13 +318,52 @@ def _search_content(q: str, limit: int = 50) -> list:
 
 
 def _latest_notes(limit: int = 8) -> list:
-    """أحدث الملازم والكتب والملخصات المضافة."""
-    docs = list(_col("buttons").find({
-        "type":    "content",
-        "deleted": {"$ne": 1},
-        "hidden":  {"$ne": 1},
-    }).sort("created_at", -1).limit(limit * 5))  # نجلب أكثر للتعويض بعد الفلترة
-    return [_enrich(d) for d in docs if _is_allowed_content(d)][:limit]
+    """أحدث الملازم والكتب والملخصات بحسب وقت إضافة آخر ملف لكل ملزمة."""
+    # أزرار البوت القديمة لا تحتوي على created_at. سجلات الملفات لديها ObjectId
+    # يتضمن وقت الإدراج، لذلك نستخدمها لترتيب الإضافات القديمة والجديدة معاً.
+    latest_by_button = []
+    seen = set()
+    for item in _col("content_items").find(
+        {"button_id": {"$exists": True, "$ne": None}},
+        {"button_id": 1},
+    ).sort("_id", -1):
+        bid = item.get("button_id")
+        if bid is None or bid in seen:
+            continue
+        seen.add(bid)
+        item_id = item.get("_id")
+        added_at = (
+            int(item_id.generation_time.timestamp())
+            if hasattr(item_id, "generation_time")
+            else None
+        )
+        latest_by_button.append((bid, added_at))
+
+    if not latest_by_button:
+        return []
+
+    buttons = {
+        doc["id"]: doc
+        for doc in _col("buttons").find({
+            "id": {"$in": [bid for bid, _ in latest_by_button]},
+            "type": "content",
+            "deleted": {"$ne": 1},
+            "hidden": {"$ne": 1},
+        })
+    }
+
+    notes = []
+    for bid, added_at in latest_by_button:
+        btn = buttons.get(bid)
+        if not btn or not _is_allowed_content(btn):
+            continue
+        # استخدم وقت الملف لتحديد شارة "جديد" إذا كان الزر بلا تاريخ.
+        if not btn.get("created_at") and added_at is not None:
+            btn = {**btn, "created_at": added_at}
+        notes.append(_enrich(btn))
+        if len(notes) >= limit:
+            break
+    return notes
 
 
 # ─────────────────────────────────────────────────────────────────────
