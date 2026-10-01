@@ -46,7 +46,11 @@ def strip_emoji(text) -> str:
     return _EMOJI_RE.sub("", str(text)).strip()
 
 NEW_DAYS        = 14      # عدد الأيام لاعتبار الملزمة "جديدة"
-_YEAR_RE = re.compile(r"20\d{2}")
+_YEAR_RE = re.compile(r"(?<!\d)20\d{2}(?!\d)")
+_DIGIT_TRANSLATION = str.maketrans({
+    **{chr(0x0660 + digit): str(digit) for digit in range(10)},
+    **{chr(0x06F0 + digit): str(digit) for digit in range(10)},
+})
 _TYPE_PRIORITY = [
     (("ملزمة", "ملزمه", "ملزم"), 0),
     (("واجبات", "واجب"), 1),
@@ -58,7 +62,7 @@ _TYPE_PRIORITY = [
 def _compound_sort_key(button: dict) -> tuple:
     """يطابق ترتيب البوت: أحدث سنة أولاً، ثم أولوية نوع المحتوى في اسم الزر."""
     label = str(button.get("label") or "")
-    years = _YEAR_RE.findall(label)
+    years = _year_candidates(label)
     year = max((int(value) for value in years), default=0)
     type_priority = 99
     for keywords, priority in _TYPE_PRIORITY:
@@ -273,54 +277,92 @@ def _pdf_thumbnail(bid: int) -> bytes | None:
         return None
 
 
-def _parse_content_lines(bid: int) -> dict:
+def _parse_content_lines(bid: int, items: list | None = None) -> dict:
     """
-    يجلب أول عنصر ذي content في الملزمة ويستخرج منه:
+    يجمع وصف ملفات الملزمة ويستخرج منه:
       - title  : السطر الأول (نوع + مادة + جزء …)
       - teacher: ما بعد "للاستاذ"
-      - year   : رقم رباعي من سطر السنة أو أي سطر
+      - year   : سنة الإصدار من الوصف أو تسمية الزر
     """
-    item = _col("content_items").find_one(
-        {"button_id": bid, "content": {"$exists": True, "$ne": ""}},
-        sort=[("ord", 1), ("id", 1)]
-    )
-    if not item:
-        return {}
-
-    raw   = item.get("content", "")
-    lines = [strip_emoji(re.sub(r'[|★☆]+', '', l)).strip() for l in raw.split("\n")]
-    lines = [l.strip(" |–-") for l in lines if l.strip(" |–-")]
-
-    title   = ""
-    teacher = ""
-    year    = ""
-
-    for i, line in enumerate(lines):
-        # السطر الأول كعنوان
-        if not title and line:
-            title = strip_emoji(line).strip()
-
-        # اسم الأستاذ
-        m_teacher = re.search(r'للاستاذ\s+(.+)', line)
-        if m_teacher and not teacher:
-            teacher = strip_emoji(m_teacher.group(1)).replace("|", "").strip()
-
-        # السنة: من سطر "سنة الاصدار" أو أي رقم رباعي
-        m_year = re.search(r'\b(20\d{2})\b', line)
-        if m_year and not year:
-            year = m_year.group(1)
-
-    return {"title": title, "teacher": teacher, "year": year}
+    if items is None:
+        items = _items(bid)
+    lines = _content_metadata_lines(items)
+    teacher = _teacher_from_lines(lines)
+    year = _release_year(lines)
+    return {
+        "title": lines[0] if lines else "",
+        "teacher": teacher,
+        "year": year,
+    }
 
 
-def _note_display_name(btn: dict) -> str:
-    """يبني اسم الملزمة بصيغة: (السطر الأول من المحتوى) للاستاذ (الاسم) (السنة)"""
-    bid  = btn["id"]
-    info = _parse_content_lines(bid)
+def _content_metadata_lines(items: list) -> list:
+    """يجمع أسطر الوصف والعنوان من كل عناصر الملزمة بترتيبها."""
+    lines = []
+    for item in items:
+        for field in ("content", "caption", "file_name", "filename", "name"):
+            raw = item.get(field)
+            if not raw:
+                continue
+            for line in str(raw).splitlines():
+                clean = strip_emoji(re.sub(r"[|★☆]+", "", line)).strip()
+                clean = clean.strip(" |–-")
+                if clean:
+                    lines.append(clean)
+    return lines
+
+
+def _teacher_from_lines(lines: list) -> str:
+    for line in lines:
+        match = re.search(
+            r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)\s*[:：]?\s*(.+)",
+            line,
+        )
+        if match:
+            return strip_emoji(match.group(1)).replace("|", "").strip()
+    return ""
+
+
+def _year_candidates(text) -> list:
+    normalized = str(text or "").translate(_DIGIT_TRANSLATION)
+    return _YEAR_RE.findall(normalized)
+
+
+def _release_year(lines: list, fallback_text: str = "") -> str:
+    """يفضّل سنة الإصدار الصريحة، ثم يستعمل أحدث سنة متاحة في وصف الملزمة."""
+    explicit_years = []
+    for line in lines:
+        normalized = _normalize_search_text(line)
+        if any(marker in normalized for marker in (
+            "سنة الاصدار", "تاريخ الاصدار", "الاصدار", "اصدار",
+            "لسنة", "للسنة", "للعام", "عام",
+        )):
+            explicit_years.extend(_year_candidates(line))
+    years = explicit_years or _year_candidates(" ".join(lines))
+    years.extend(_year_candidates(fallback_text))
+    return max(years, default="")
+
+
+def _append_year(title: str, year: str) -> str:
+    title = str(title or "").strip()
+    year = str(year or "")
+    if year and year not in str(title).translate(_DIGIT_TRANSLATION):
+        return f"{title} {year}".strip()
+    return title
+
+
+def _note_display_name(btn: dict, items: list | None = None) -> str:
+    """يبني اسم الملزمة من وصفها، ويضمّن سنة الإصدار في العنوان."""
+    if items is None:
+        items = _items(btn["id"])
+    info = _parse_content_lines(btn["id"], items)
 
     title   = info.get("title", "")
     teacher = info.get("teacher", "")
-    year    = info.get("year", "")
+    year    = _release_year(
+        _content_metadata_lines(items),
+        btn.get("label", ""),
+    )
 
     # إذا لم يوجد عنوان من المحتوى، نرجع للتسمية الاحتياطية
     if not title:
@@ -329,22 +371,22 @@ def _note_display_name(btn: dict) -> str:
     parts = [title]
     if teacher:
         parts.append(f"للاستاذ {teacher}")
-    if year and year not in title:
-        parts.append(year)
+    display_name = " ".join(parts)
+    display_name = _append_year(display_name, year)
 
-    return " ".join(parts)
+    return display_name
 
 
 def _attachment_title(item: dict, index: int) -> str:
     """يستخرج عنوان الفصل أو الملف من الوصف المخزّن مع مرفق البوت."""
-    raw = item.get("content") or item.get("caption") or ""
-    for line in str(raw).splitlines():
-        title = strip_emoji(line)
-        title = re.sub(r"^[\s|:;،\-–—]+", "", title)
+    title = ""
+    for line in _content_metadata_lines([item]):
+        title = re.sub(r"^[\s|:;،\-–—]+", "", line)
         title = re.sub(r"\s+", " ", title).strip()
         if title:
-            return title[:160]
-    return f"الملف {index}"
+            break
+    year = _release_year(_content_metadata_lines([item]))
+    return _append_year(title or f"الملف {index}", year)[:160]
 
 
 def _file_attachments(items: list) -> list:
@@ -377,6 +419,7 @@ def _enrich(btn: dict) -> dict:
 def _normalize_search_text(value) -> str:
     """يوحّد اختلافات الكتابة العربية الشائعة قبل مطابقة كلمات البحث."""
     text = unicodedata.normalize("NFKC", strip_emoji(value or "")).replace(_TATWEEL, "")
+    text = text.translate(_DIGIT_TRANSLATION)
     text = re.sub(r"[\u064b-\u065f\u0670]", "", text)
     text = text.translate(str.maketrans({
         "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
@@ -466,57 +509,28 @@ def _search_index_records() -> list:
 
 def _attachment_search_subtitle(item: dict, group_label: str) -> str:
     raw = _search_item_text(item)
-    parts = [strip_emoji(group_label)] if strip_emoji(group_label) else []
+    clean_group = str(strip_emoji(group_label)).translate(_DIGIT_TRANSLATION)
+    clean_group = re.sub(_YEAR_RE, "", clean_group)
+    clean_group = re.sub(r"\s+", " ", clean_group).strip()
+    parts = [clean_group] if clean_group else []
     teacher = ""
     for line in str(raw).splitlines():
         clean_line = strip_emoji(line)
         match = re.search(r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)\s*[:：]?\s*(.+)", clean_line)
         if match:
-            teacher = re.sub(r"\s+", " ", match.group(1)).strip(" |:،")
+            teacher = match.group(1).translate(_DIGIT_TRANSLATION)
+            teacher = re.sub(_YEAR_RE, "", teacher)
+            teacher = re.sub(r"\s+", " ", teacher).strip(" |:،")
             if teacher:
                 if _normalize_search_text(teacher) not in _normalize_search_text(group_label):
                     parts.append(f"الأستاذ {teacher}")
                 break
-    years = _YEAR_RE.findall(raw)
-    if years:
-        year = max(years)
-        if year not in " ".join(parts):
-            parts.append(year)
     return " · ".join(dict.fromkeys(part for part in parts if part))
 
 
 def _search_note_display_name(btn: dict, items: list) -> str:
     """يبني عنوان نتيجة البحث من أول وصف ملف محمّل مسبقاً دون استعلام إضافي."""
-    item = next(
-        (item for item in items if item.get("content")),
-        None,
-    )
-    if not item:
-        return strip_emoji(btn.get("label", ""))
-
-    raw = str(item.get("content") or "")
-    lines = [strip_emoji(re.sub(r"[|★☆]+", "", line)).strip() for line in raw.split("\n")]
-    lines = [line.strip(" |–-") for line in lines if line.strip(" |–-")]
-    title = lines[0] if lines else ""
-    teacher = ""
-    year = ""
-    for line in lines:
-        match = re.search(
-            r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)\s*[:：]?\s*(.+)",
-            line,
-        )
-        if match and not teacher:
-            teacher = strip_emoji(match.group(1)).replace("|", "").strip()
-        year_match = _YEAR_RE.search(line)
-        if year_match and not year:
-            year = year_match.group(0)
-
-    parts = [title or strip_emoji(btn.get("label", ""))]
-    if teacher:
-        parts.append(f"للأستاذ {teacher}")
-    if year and year not in parts[0]:
-        parts.append(year)
-    return " ".join(part for part in parts if part)
+    return _note_display_name(btn, items)
 
 
 def _search_content(q: str, limit: int = 50) -> list:
@@ -568,11 +582,15 @@ def _search_content(q: str, limit: int = 50) -> list:
                     continue
                 seen_files.add(file_id)
                 item_text = _search_item_text(item)
-                years = _YEAR_RE.findall(f"{label} {item_text}")
+                years = _year_candidates(f"{label} {item_text}")
+                display_label = _append_year(
+                    _attachment_title(item, index),
+                    max(years, default=""),
+                )
                 results.append({
                     "id": bid,
                     "url": f"/file/{file_id}",
-                    "display_label": _attachment_title(item, index),
+                    "display_label": display_label,
                     "subtitle": _attachment_search_subtitle(item, label),
                     "thumb_url": False,
                     "is_new": False,
@@ -595,8 +613,8 @@ def _search_content(q: str, limit: int = 50) -> list:
                 "subtitle": "",
                 "is_attachment": False,
                 "_rank": 0 if exact_label_match else (1 if label_match else 2),
-                "_year": max(
-                    (int(year) for year in _YEAR_RE.findall(
+                    "_year": max(
+                    (int(year) for year in _year_candidates(
                         " ".join([label] + [_search_item_text(item) for item in items])
                     )),
                     default=0,
@@ -709,21 +727,8 @@ def create_app() -> Flask:
         for child in children:
             if child.get("type") != "content":
                 continue
-            attachments = _file_attachments(_items(child["id"]))
-            if len(attachments) > 1:
-                # اعرض فصول الملزمة مباشرة في صفحة الأستاذ بدلاً من صفحة تجميع وسيطة.
-                group_label = strip_emoji(child.get("label", ""))
-                contents.extend({
-                    "is_attachment": True,
-                    "file_id": attachment["file_id"],
-                    "display_label": attachment["title"],
-                    "group_label": group_label,
-                    "thumb_url": False,
-                    "is_new": False,
-                    "click_count": 0,
-                } for attachment in attachments)
-            else:
-                contents.append({**_enrich(child), "is_attachment": False})
+            # كل عنصر محتوى يبقى ملزمة مستقلة؛ ملفاتها تظهر داخل صفحة الملزمة.
+            contents.append({**_enrich(child), "is_attachment": False})
         breadcrumb = _breadcrumb(bid)
         return render_template("category.html",
             btn=btn,
@@ -749,7 +754,7 @@ def create_app() -> Flask:
         rating        = _rating(bid)
         breadcrumb    = _breadcrumb(bid)
         thumb         = _has_content_media(bid)
-        display_label = _note_display_name(btn)
+        display_label = _note_display_name(btn, items)
 
         # نص المقدمة: أول عنصر نصي
         preview_text = next(
@@ -765,12 +770,6 @@ def create_app() -> Flask:
         ]
         # أظهر جميع الملفات المرفقة بالزر، لا أول ملف فقط.
         attachments = _file_attachments(items)
-
-        # المجموعات متعددة الملفات تُعرض من قائمة القسم مباشرةً.
-        parent_id = btn.get("parent_id")
-        parent_btn = _btn(parent_id) if parent_id is not None else None
-        if len(attachments) > 1 and parent_btn and parent_btn.get("type") != "content":
-            return redirect(url_for("category", bid=parent_id))
 
         # رابط deep-link للبوت لفتح الملزمة مباشرة
         bot_deep_link = f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
