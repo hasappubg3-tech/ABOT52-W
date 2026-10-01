@@ -462,6 +462,23 @@ def _find_visible_attachment(file_id: str) -> dict | None:
     return None
 
 
+def _storage_message_url(item: dict) -> str:
+    message_id = item.get("channel_msg_id")
+    if not message_id:
+        return ""
+    try:
+        from bot.data_access import get_storage_channel_id
+        channel_id = str(get_storage_channel_id() or "").strip()
+    except Exception:
+        return ""
+
+    if channel_id.startswith("@"):
+        return f"https://t.me/{channel_id[1:]}/{message_id}"
+    if channel_id.startswith("-100") and channel_id[4:].isdigit():
+        return f"https://t.me/c/{channel_id[4:]}/{message_id}"
+    return ""
+
+
 _SIMILAR_TITLE_STOPWORDS = {
     "ملزمة", "ملازم", "ملخص", "ملخصات", "واجب", "واجبات",
     "وزاريات", "وزاري", "الفصل", "فصل", "الجزء", "جزء",
@@ -601,7 +618,7 @@ def _search_index_records() -> list:
             {"button_id": {"$exists": True, "$ne": None}},
             {"button_id": 1, "id": 1, "type": 1, "file_id": 1, "content": 1,
              "caption": 1, "file_name": 1, "filename": 1, "name": 1, "ord": 1,
-             "created_at": 1, "_id": 1},
+             "created_at": 1, "channel_msg_id": 1, "_id": 1},
         ).sort([("ord", 1), ("id", 1)]):
             items_by_button.setdefault(item.get("button_id"), []).append(item)
 
@@ -958,6 +975,8 @@ def create_app() -> Flask:
         )
         subtitle = _attachment_search_subtitle(item, record["label"])
         similar = _similar_attachments(selected)
+        file_available = bool(_file_url(file_id))
+        channel_message_url = _storage_message_url(item)
 
         return render_template(
             "attachment.html",
@@ -965,6 +984,8 @@ def create_app() -> Flask:
             display_label=display_label,
             subtitle=subtitle,
             similar=similar,
+            file_available=file_available,
+            channel_message_url=channel_message_url,
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",

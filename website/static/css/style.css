@@ -1023,6 +1023,17 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   line-height: 1.7;
   margin: -.25rem 0 1rem;
 }
+.attachment-unavailable {
+  border: 1px solid var(--gold-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  line-height: 1.8;
+  padding: 2rem;
+  text-align: center;
+}
+.attachment-unavailable strong { color: var(--text); }
+.attachment-unavailable p { margin: .5rem 0 0; }
 
 .pdf-wrapper {
   border: 2px solid var(--gold-border);
