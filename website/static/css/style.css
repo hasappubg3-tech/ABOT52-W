@@ -215,6 +215,13 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
 }
 .search-result-item:last-child { border-bottom: none; }
 .search-result-item:hover { background: var(--gold-subtle); color: var(--gold); }
+.search-result-subtitle {
+  display: block;
+  margin-top: .2rem;
+  color: var(--text-muted);
+  font-size: .76rem;
+  line-height: 1.5;
+}
 
 /* ── Layout ──────────────────────────────────────────────────── */
 .main-content { flex: 1; }

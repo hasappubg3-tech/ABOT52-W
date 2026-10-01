@@ -6,6 +6,8 @@ import os
 import re
 import time
 import logging
+import unicodedata
+from threading import Lock
 import requests as _req
 from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response
 
@@ -71,7 +73,7 @@ _TATWEEL = "\u0640"
 
 def _clean(label: str) -> str:
     """يُزيل التطويل والإيموجي ليتبقى النص العربي الصريح."""
-    return label.replace(_TATWEEL, "")
+    return str(label or "").replace(_TATWEEL, "")
 
 # كلمات تدل على قائمة ملازم/كتب/ملخصات (للقوائم الفرعية)
 _MENU_WHITELIST = ["ملازم", "ملزمة", "ملزمه", "كتب", "كتاب", "ملخص", "ملخصات"]
@@ -102,6 +104,9 @@ _PDF_THUMB_TTL  = 86400   # يوم كامل
 # ── Cache بسيط (file_id / bid -> (url|None, timestamp)) ──────────
 _file_url_cache: dict = {}
 _FILE_URL_TTL = 3600  # ساعة واحدة
+_SEARCH_INDEX_TTL = 30
+_search_index_cache = {"expires": 0.0, "records": None}
+_search_index_lock = Lock()
 
 
 def _get_mongo():
@@ -153,6 +158,21 @@ def _file_url(file_id: str) -> str | None:
 
 def _btn(bid: int):
     return _col("buttons").find_one({"id": bid, "deleted": {"$ne": 1}, "hidden": {"$ne": 1}})
+
+
+def _has_visible_ancestors(btn: dict, ancestors: dict) -> bool:
+    """يتأكد أن زر المحتوى ينتمي إلى مسار ظاهر في الموقع، لا إلى سجل يتيم."""
+    parent_id = btn.get("parent_id")
+    visited = set()
+    while parent_id is not None:
+        if parent_id in visited:
+            return False
+        visited.add(parent_id)
+        parent = ancestors.get(parent_id)
+        if not parent:
+            return False
+        parent_id = parent.get("parent_id")
+    return True
 
 
 def _children(pid):
@@ -354,14 +374,242 @@ def _enrich(btn: dict) -> dict:
     }
 
 
+def _normalize_search_text(value) -> str:
+    """يوحّد اختلافات الكتابة العربية الشائعة قبل مطابقة كلمات البحث."""
+    text = unicodedata.normalize("NFKC", strip_emoji(value or "")).replace(_TATWEEL, "")
+    text = re.sub(r"[\u064b-\u065f\u0670]", "", text)
+    text = text.translate(str.maketrans({
+        "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",
+        "ى": "ي", "ک": "ك", "ی": "ي",
+    }))
+    return re.sub(r"\s+", " ", text.casefold()).strip()
+
+
+def _search_tokens(q: str) -> list:
+    return list(dict.fromkeys(re.findall(r"[\w]+", _normalize_search_text(q))))
+
+
+def _search_item_text(item: dict) -> str:
+    fields = ("content", "caption", "file_name", "filename", "name")
+    return " ".join(str(item.get(field) or "") for field in fields)
+
+
+def _search_matches_normalized(normalized_text: str, tokens: list) -> bool:
+    return all(token in normalized_text for token in tokens)
+
+
+def _search_index_records() -> list:
+    """يحمّل فهرس البحث مرة واحدة ويحدّثه دورياً لتبقى الطلبات الحية سريعة."""
+    global _search_index_cache
+    now = time.monotonic()
+    if _search_index_cache["records"] is not None and now < _search_index_cache["expires"]:
+        return _search_index_cache["records"]
+
+    with _search_index_lock:
+        now = time.monotonic()
+        if _search_index_cache["records"] is not None and now < _search_index_cache["expires"]:
+            return _search_index_cache["records"]
+
+        visible_buttons = {
+            doc["id"]: doc
+            for doc in _col("buttons").find(
+                {"deleted": {"$ne": 1}, "hidden": {"$ne": 1}},
+                {"id": 1, "type": 1, "label": 1, "parent_id": 1,
+                 "created_at": 1, "click_count": 1},
+            )
+        }
+        items_by_button = {}
+        for item in _col("content_items").find(
+            {"button_id": {"$exists": True, "$ne": None}},
+            {"button_id": 1, "id": 1, "type": 1, "file_id": 1, "content": 1,
+             "caption": 1, "file_name": 1, "filename": 1, "name": 1, "ord": 1},
+        ).sort([("ord", 1), ("id", 1)]):
+            items_by_button.setdefault(item.get("button_id"), []).append(item)
+
+        allowed_terms = tuple(_normalize_search_text(word) for word in _CONTENT_WHITELIST)
+        records = []
+        for btn in sorted(visible_buttons.values(), key=lambda doc: str(doc.get("id", ""))):
+            if btn.get("type") != "content" or not _has_visible_ancestors(btn, visible_buttons):
+                continue
+
+            items = items_by_button.get(btn["id"], [])
+            label = str(btn.get("label") or "")
+            normalized_label = _normalize_search_text(label)
+            normalized_item_texts = [
+                _normalize_search_text(_search_item_text(item))
+                for item in items
+            ]
+            aggregate_normalized = " ".join(
+                [normalized_label, *normalized_item_texts]
+            )
+            allowed = _is_allowed_content(btn) or any(
+                term in aggregate_normalized for term in allowed_terms
+            )
+            if not allowed:
+                continue
+
+            records.append({
+                "button": btn,
+                "items": items,
+                "label": label,
+                "normalized_label": normalized_label,
+                "normalized_item_texts": normalized_item_texts,
+                "aggregate_normalized": aggregate_normalized,
+            })
+
+        _search_index_cache = {
+            "expires": time.monotonic() + _SEARCH_INDEX_TTL,
+            "records": records,
+        }
+        return records
+
+
+def _attachment_search_subtitle(item: dict, group_label: str) -> str:
+    raw = _search_item_text(item)
+    parts = [strip_emoji(group_label)] if strip_emoji(group_label) else []
+    teacher = ""
+    for line in str(raw).splitlines():
+        clean_line = strip_emoji(line)
+        match = re.search(r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)\s*[:：]?\s*(.+)", clean_line)
+        if match:
+            teacher = re.sub(r"\s+", " ", match.group(1)).strip(" |:،")
+            if teacher:
+                if _normalize_search_text(teacher) not in _normalize_search_text(group_label):
+                    parts.append(f"الأستاذ {teacher}")
+                break
+    years = _YEAR_RE.findall(raw)
+    if years:
+        year = max(years)
+        if year not in " ".join(parts):
+            parts.append(year)
+    return " · ".join(dict.fromkeys(part for part in parts if part))
+
+
+def _search_note_display_name(btn: dict, items: list) -> str:
+    """يبني عنوان نتيجة البحث من أول وصف ملف محمّل مسبقاً دون استعلام إضافي."""
+    item = next(
+        (item for item in items if item.get("content")),
+        None,
+    )
+    if not item:
+        return strip_emoji(btn.get("label", ""))
+
+    raw = str(item.get("content") or "")
+    lines = [strip_emoji(re.sub(r"[|★☆]+", "", line)).strip() for line in raw.split("\n")]
+    lines = [line.strip(" |–-") for line in lines if line.strip(" |–-")]
+    title = lines[0] if lines else ""
+    teacher = ""
+    year = ""
+    for line in lines:
+        match = re.search(
+            r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)\s*[:：]?\s*(.+)",
+            line,
+        )
+        if match and not teacher:
+            teacher = strip_emoji(match.group(1)).replace("|", "").strip()
+        year_match = _YEAR_RE.search(line)
+        if year_match and not year:
+            year = year_match.group(0)
+
+    parts = [title or strip_emoji(btn.get("label", ""))]
+    if teacher:
+        parts.append(f"للأستاذ {teacher}")
+    if year and year not in parts[0]:
+        parts.append(year)
+    return " ".join(part for part in parts if part)
+
+
 def _search_content(q: str, limit: int = 50) -> list:
-    docs = list(_col("buttons").find({
-        "type": "content",
-        "deleted": {"$ne": 1},
-        "hidden":  {"$ne": 1},
-        "label":   {"$regex": q, "$options": "i"}
-    }).limit(limit * 3))  # نجلب أكثر للتعويض بعد الفلترة
-    return [_enrich(d) for d in docs if _is_allowed_content(d)][:limit]
+    tokens = _search_tokens(q)
+    if not tokens:
+        return []
+
+    results = []
+    seen_files = set()
+    seen_notes = set()
+    normalized_query = " ".join(tokens)
+
+    for record in _search_index_records():
+        btn = record["button"]
+        bid = btn["id"]
+        items = record["items"]
+        label = record["label"]
+        normalized_label = record["normalized_label"]
+        if not _search_matches_normalized(record["aggregate_normalized"], tokens):
+            continue
+
+        label_match = _search_matches_normalized(normalized_label, tokens)
+        exact_label_match = normalized_query in normalized_label
+        file_items = [
+            (file_index, item, record["normalized_item_texts"][item_index])
+            for file_index, (item_index, item) in enumerate(
+                (
+                    (item_index, item)
+                    for item_index, item in enumerate(items)
+                    if item.get("type") in {"document", "file"} and item.get("file_id")
+                ),
+                start=1,
+            )
+        ]
+        matching_files = [
+            (index, item, item_normalized)
+            for index, item, item_normalized in file_items
+            if _search_matches_normalized(
+                f"{normalized_label} {item_normalized}",
+                tokens,
+            )
+        ]
+        selected_files = file_items if label_match else matching_files
+
+        if selected_files:
+            for index, item, _item_normalized in selected_files:
+                file_id = item["file_id"]
+                if file_id in seen_files:
+                    continue
+                seen_files.add(file_id)
+                item_text = _search_item_text(item)
+                years = _YEAR_RE.findall(f"{label} {item_text}")
+                results.append({
+                    "id": bid,
+                    "url": f"/file/{file_id}",
+                    "display_label": _attachment_title(item, index),
+                    "subtitle": _attachment_search_subtitle(item, label),
+                    "thumb_url": False,
+                    "is_new": False,
+                    "click_count": 0,
+                    "is_attachment": True,
+                    "_rank": 0 if exact_label_match else (1 if label_match else 2),
+                    "_year": max((int(year) for year in years), default=0),
+                })
+            continue
+
+        if bid not in seen_notes:
+            note = {
+                **btn,
+                "rating": {"count": 0, "avg": 0.0, "stars": ""},
+                "is_new": _is_new(btn),
+                "thumb_url": False,
+                "click_count": btn.get("click_count", 0),
+                "display_label": _search_note_display_name(btn, items),
+                "url": f"/note/{bid}",
+                "subtitle": "",
+                "is_attachment": False,
+                "_rank": 0 if exact_label_match else (1 if label_match else 2),
+                "_year": max(
+                    (int(year) for year in _YEAR_RE.findall(
+                        " ".join([label] + [_search_item_text(item) for item in items])
+                    )),
+                    default=0,
+                ),
+            }
+            results.append(note)
+            seen_notes.add(bid)
+
+    results.sort(key=lambda result: (result["_rank"], -result["_year"]))
+    for result in results:
+        result.pop("_rank", None)
+        result.pop("_year", None)
+    return results[:max(1, limit)]
 
 
 def _latest_notes(limit: int = 8) -> list:
@@ -570,16 +818,14 @@ def create_app() -> Flask:
         q = request.args.get("q", "").strip()
         if not q:
             return jsonify([])
-        docs = list(_col("buttons").find({
-            "type":    "content",
-            "deleted": {"$ne": 1},
-            "hidden":  {"$ne": 1},
-            "label":   {"$regex": q, "$options": "i"}
-        }).limit(50))
-        filtered = [d for d in docs if _is_allowed_content(d)][:15]
         return jsonify([
-            {"id": d["id"], "label": strip_emoji(d.get("label", "")), "url": f"/note/{d['id']}"}
-            for d in filtered
+            {
+                "id": result["id"],
+                "label": result["display_label"],
+                "url": result["url"],
+                "subtitle": result.get("subtitle", ""),
+            }
+            for result in _search_content(q, limit=15)
         ])
 
     # ── Thumbnail: أول صفحة من PDF ────────────────────────────────────

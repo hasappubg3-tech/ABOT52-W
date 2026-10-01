@@ -40,12 +40,13 @@
 
   // Debounce
   let debounceTimer;
+  let requestSequence = 0;
   searchInput.addEventListener('input', (e) => {
     const q = e.target.value.trim();
     clearBtn?.classList.toggle('hidden', !q);
 
     clearTimeout(debounceTimer);
-    if (!q) { clearResults(); return; }
+    if (Array.from(q.replace(/\s/g, '')).length < 2) { clearResults(); return; }
 
     debounceTimer = setTimeout(() => doSearch(q), 280);
   });
@@ -63,9 +64,11 @@
   });
 
   async function doSearch(q) {
+    const sequence = ++requestSequence;
     try {
       const res  = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
+      if (sequence !== requestSequence || searchInput.value.trim() !== q) return;
       showResults(data, q);
     } catch { /* صامت */ }
   }
@@ -75,9 +78,12 @@
     if (!items || items.length === 0) {
       resultsBox.innerHTML = `<div class="search-result-item" style="color:#888;text-align:center">لا توجد نتائج لـ "${escHtml(q)}"</div>`;
     } else {
-      resultsBox.innerHTML = items.map(item =>
-        `<a class="search-result-item" href="${escHtml(item.url)}">${escHtml(item.label)}</a>`
-      ).join('') +
+      resultsBox.innerHTML = items.map(item => {
+        const subtitle = item.subtitle
+          ? `<span class="search-result-subtitle">${escHtml(item.subtitle)}</span>`
+          : '';
+        return `<a class="search-result-item" href="${escHtml(item.url)}"><span>${escHtml(item.label)}</span>${subtitle}</a>`;
+      }).join('') +
       (items.length >= 15
         ? `<a class="search-result-item" href="/search?q=${encodeURIComponent(q)}" style="color:var(--gold);text-align:center">عرض كل النتائج ←</a>`
         : '');

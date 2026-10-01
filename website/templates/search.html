@@ -15,7 +15,11 @@
   {% if results %}
   <div class="notes-list">
     {% for note in results %}
-    <a href="/note/{{ note.id }}" class="note-card">
+    {% if note.is_attachment %}
+    <a href="{{ note.url }}" class="note-card" target="_blank" rel="noopener noreferrer">
+    {% else %}
+    <a href="{{ note.url }}" class="note-card">
+    {% endif %}
       <div class="note-thumb">
         {% if note.thumb_url %}
           <img src="/thumb/{{ note.id }}" alt="{{ note.display_label }}" loading="lazy">
@@ -31,6 +35,9 @@
           {% if note.is_new %}<span class="badge badge--new">جديد</span>{% endif %}
         </div>
         <div class="note-meta">
+          {% if note.is_attachment %}
+          <span class="meta-item">{{ note.subtitle | strip_emoji }}</span>
+          {% else %}
           {% if note.rating.count > 0 %}
           <span class="meta-item">
             <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}★{% else %}☆{% endif %}{% endfor %}</span>
@@ -41,9 +48,14 @@
           {% if note.click_count > 0 %}
           <span class="meta-item">↓ <span class="meta-val">{{ note.click_count }}</span></span>
           {% endif %}
+          {% endif %}
         </div>
         <div class="note-actions">
+          {% if note.is_attachment %}
+          <span class="open-btn">فتح الملف</span>
+          {% else %}
           <span class="open-btn">عرض الملزمة</span>
+          {% endif %}
         </div>
       </div>
     </a>
