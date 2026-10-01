@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb" aria-label="مسار التنقل">
+  <div class="container">
+    <a href="/" class="bc-item">الرئيسية</a>
+    <span class="bc-sep">←</span>
+    <span class="bc-item bc-current">{{ display_label | strip_emoji }}</span>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <button class="back-btn" onclick="history.back()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>
+    رجوع
+  </button>
+
+  <section class="note-detail">
+    <div class="note-cover">
+      <div class="cover-placeholder">
+        <span class="cover-letter">م</span>
+        <span class="cover-label">{{ display_label | strip_emoji }}</span>
+      </div>
+    </div>
+    <div class="note-detail-info">
+      <h1 class="detail-title">{{ display_label | strip_emoji }}</h1>
+      {% if subtitle %}
+      <p class="attachment-page-meta">{{ subtitle | strip_emoji }}</p>
+      {% endif %}
+      <div class="detail-actions">
+        <a href="/file/{{ file_id }}" target="_blank" rel="noopener noreferrer" class="btn btn--primary btn--lg">
+          فتح الملزمة
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="pdf-section" aria-label="معاينة الملزمة">
+    <div class="pdf-wrapper">
+      <iframe class="pdf-embed" src="/file/{{ file_id }}" title="{{ display_label | strip_emoji }}" loading="lazy"></iframe>
+    </div>
+  </section>
+
+  {% if similar %}
+  <section class="attachment-section">
+    <h2 class="section-title">ملفات مشابهة</h2>
+    <div class="notes-list">
+      {% for file in similar %}
+      <a href="{{ file.url }}" class="note-card">
+        <div class="note-thumb">
+          <div class="note-thumb-placeholder"><span>م</span></div>
+        </div>
+        <div class="note-info">
+          <div class="note-top">
+            <h3 class="note-title">{{ file.display_label | strip_emoji }}</h3>
+            {% if file.is_new %}<span class="badge badge--new">جديد</span>{% endif %}
+          </div>
+          {% if file.subtitle %}
+          <div class="note-meta">
+            <span class="meta-item">{{ file.subtitle | strip_emoji }}</span>
+          </div>
+          {% endif %}
+          <div class="note-actions">
+            <span class="open-btn">فتح الملف</span>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

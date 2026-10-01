@@ -229,6 +229,32 @@ def _is_new(btn: dict) -> bool:
     return time.time() - created_at < NEW_DAYS * 86400
 
 
+def _timestamp_value(value) -> float:
+    if hasattr(value, "timestamp"):
+        try:
+            return float(value.timestamp())
+        except (OSError, OverflowError, ValueError):
+            return 0
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _content_item_timestamp(item: dict) -> float:
+    object_id = item.get("_id")
+    if hasattr(object_id, "generation_time"):
+        return _timestamp_value(object_id.generation_time)
+    return _timestamp_value(item.get("created_at"))
+
+
+def _item_sort_key(item: dict) -> tuple:
+    return (
+        _content_item_timestamp(item),
+        str(item.get("_id") or item.get("id") or ""),
+    )
+
+
 def _has_content_media(bid: int) -> bool:
     """هل يوجد صورة أو PDF لهذا الزر؟"""
     return bool(_col("content_items").find_one(
@@ -404,6 +430,115 @@ def _file_attachments(items: list) -> list:
     ]
 
 
+def _file_items(items: list) -> list:
+    return [
+        (index, item)
+        for index, item in enumerate(
+            (item for item in items
+             if item.get("type") in {"document", "file"} and item.get("file_id")),
+            start=1,
+        )
+    ]
+
+
+def _attachment_display_title(item: dict, index: int, group_label: str = "") -> str:
+    title = _attachment_title(item, index)
+    if title == f"الملف {index}":
+        title = strip_emoji(group_label) or title
+    year = _release_year(_content_metadata_lines([item]), group_label)
+    return _append_year(title, year)
+
+
+def _find_visible_attachment(file_id: str) -> dict | None:
+    for record in _search_index_records():
+        for index, item in _file_items(record["items"]):
+            if item.get("file_id") == file_id:
+                return {
+                    "record": record,
+                    "button": record["button"],
+                    "item": item,
+                    "index": index,
+                }
+    return None
+
+
+_SIMILAR_TITLE_STOPWORDS = {
+    "ملزمة", "ملازم", "ملخص", "ملخصات", "واجب", "واجبات",
+    "وزاريات", "وزاري", "الفصل", "فصل", "الجزء", "جزء",
+    "سنة", "الاصدار", "اصدار",
+}
+
+
+def _attachment_topic_tokens(title: str) -> set:
+    return {
+        token for token in _search_tokens(title)
+        if token not in _SIMILAR_TITLE_STOPWORDS and not token.isdigit()
+    }
+
+
+def _similar_attachments(selected: dict, limit: int = 6) -> list:
+    selected_button = selected["button"]
+    selected_item = selected["item"]
+    selected_file_id = selected_item.get("file_id")
+    selected_title = _attachment_display_title(
+        selected_item, selected["index"], selected_button.get("label", "")
+    )
+    selected_topics = _attachment_topic_tokens(selected_title)
+    selected_teacher = _normalize_search_text(
+        _teacher_from_lines(_content_metadata_lines([selected_item]))
+    )
+    candidates = []
+
+    for record in _search_index_records():
+        button = record["button"]
+        for index, item in _file_items(record["items"]):
+            file_id = item.get("file_id")
+            if not file_id or file_id == selected_file_id:
+                continue
+
+            title = _attachment_display_title(item, index, record["label"])
+            teacher = _normalize_search_text(
+                _teacher_from_lines(_content_metadata_lines([item]))
+            )
+            same_button = button.get("id") == selected_button.get("id")
+            same_teacher = bool(selected_teacher and teacher and selected_teacher == teacher)
+            same_parent = (
+                selected_button.get("parent_id") is not None
+                and selected_button.get("parent_id") == button.get("parent_id")
+            )
+            shared_topics = len(selected_topics & _attachment_topic_tokens(title))
+            if not (same_button or same_teacher or same_parent or shared_topics >= 2):
+                continue
+
+            added_at = _content_item_timestamp(item)
+            candidates.append({
+                "file_id": file_id,
+                "url": f"/attachment/{file_id}",
+                "display_label": title,
+                "subtitle": _attachment_search_subtitle(item, record["label"]),
+                "is_new": bool(added_at and time.time() - added_at < NEW_DAYS * 86400),
+                "_score": (same_button, same_teacher, same_parent, shared_topics),
+                "_sort": _item_sort_key(item),
+            })
+
+    candidates.sort(
+        key=lambda item: (item["_score"], item["_sort"]),
+        reverse=True,
+    )
+    results = []
+    seen_files = {selected_file_id}
+    for candidate in candidates:
+        if candidate["file_id"] in seen_files:
+            continue
+        seen_files.add(candidate["file_id"])
+        candidate.pop("_score", None)
+        candidate.pop("_sort", None)
+        results.append(candidate)
+        if len(results) >= limit:
+            break
+    return results
+
+
 def _enrich(btn: dict) -> dict:
     bid = btn["id"]
     return {
@@ -465,7 +600,8 @@ def _search_index_records() -> list:
         for item in _col("content_items").find(
             {"button_id": {"$exists": True, "$ne": None}},
             {"button_id": 1, "id": 1, "type": 1, "file_id": 1, "content": 1,
-             "caption": 1, "file_name": 1, "filename": 1, "name": 1, "ord": 1},
+             "caption": 1, "file_name": 1, "filename": 1, "name": 1, "ord": 1,
+             "created_at": 1, "_id": 1},
         ).sort([("ord", 1), ("id", 1)]):
             items_by_button.setdefault(item.get("button_id"), []).append(item)
 
@@ -631,52 +767,66 @@ def _search_content(q: str, limit: int = 50) -> list:
 
 
 def _latest_notes(limit: int = 8) -> list:
-    """أحدث الملازم والكتب والملخصات بحسب وقت إضافة آخر ملف لكل ملزمة."""
-    # أزرار البوت القديمة لا تحتوي على created_at. سجلات الملفات لديها ObjectId
-    # يتضمن وقت الإدراج، لذلك نستخدمها لترتيب الإضافات القديمة والجديدة معاً.
-    latest_by_button = []
-    seen = set()
-    for item in _col("content_items").find(
-        {"button_id": {"$exists": True, "$ne": None}},
-        {"button_id": 1},
-    ).sort("_id", -1):
-        bid = item.get("button_id")
-        if bid is None or bid in seen:
+    """يعرض كل مرفق كإضافة مستقلة، لا كحزمة واحدة مرتبطة بزر البوت."""
+    candidates = []
+    for record in _search_index_records():
+        btn = record["button"]
+        items = record["items"]
+        file_items = _file_items(items)
+
+        if file_items:
+            for index, item in file_items:
+                added_at = _content_item_timestamp(item) or _timestamp_value(
+                    btn.get("created_at")
+                )
+                candidates.append({
+                    "id": btn["id"],
+                    "file_id": item["file_id"],
+                    "url": f"/attachment/{item['file_id']}",
+                    "display_label": _attachment_display_title(
+                        item, index, record["label"]
+                    ),
+                    "subtitle": _attachment_search_subtitle(item, record["label"]),
+                    "thumb_url": False,
+                    "is_new": bool(
+                        added_at and time.time() - added_at < NEW_DAYS * 86400
+                    ),
+                    "click_count": 0,
+                    "is_attachment": True,
+                    "_dedupe_key": ("file", item["file_id"]),
+                    "_sort": _item_sort_key(item),
+                })
             continue
-        seen.add(bid)
-        item_id = item.get("_id")
-        added_at = (
-            int(item_id.generation_time.timestamp())
-            if hasattr(item_id, "generation_time")
-            else None
+
+        item_added_at = max(
+            (_content_item_timestamp(item) for item in items),
+            default=0,
         )
-        latest_by_button.append((bid, added_at))
+        added_at = max(item_added_at, _timestamp_value(btn.get("created_at")))
+        note_btn = {**btn, "created_at": added_at} if added_at else btn
+        note = {
+            **_enrich(note_btn),
+            "url": f"/note/{btn['id']}",
+            "subtitle": "",
+            "is_attachment": False,
+            "_dedupe_key": ("note", btn["id"]),
+            "_sort": (added_at, str(btn["id"])),
+        }
+        candidates.append(note)
 
-    if not latest_by_button:
-        return []
-
-    buttons = {
-        doc["id"]: doc
-        for doc in _col("buttons").find({
-            "id": {"$in": [bid for bid, _ in latest_by_button]},
-            "type": "content",
-            "deleted": {"$ne": 1},
-            "hidden": {"$ne": 1},
-        })
-    }
-
-    notes = []
-    for bid, added_at in latest_by_button:
-        btn = buttons.get(bid)
-        if not btn or not _is_allowed_content(btn):
+    candidates.sort(key=lambda item: item["_sort"], reverse=True)
+    latest = []
+    seen = set()
+    for candidate in candidates:
+        dedupe_key = candidate.pop("_dedupe_key")
+        if dedupe_key in seen:
             continue
-        # استخدم وقت الملف لتحديد شارة "جديد" إذا كان الزر بلا تاريخ.
-        if not btn.get("created_at") and added_at is not None:
-            btn = {**btn, "created_at": added_at}
-        notes.append(_enrich(btn))
-        if len(notes) >= limit:
+        seen.add(dedupe_key)
+        candidate.pop("_sort", None)
+        latest.append(candidate)
+        if len(latest) >= limit:
             break
-    return notes
+    return latest
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -791,6 +941,36 @@ def create_app() -> Flask:
             og_title=f"{display_label} — {SITE_NAME}",
             og_description=preview_text[:160] if preview_text else f"ملزمة {display_label}",
             og_url=f"/note/{bid}",
+            og_image="",
+        )
+
+    # ── صفحة ملف مستقل مع اقتراحات مشابهة ────────────────────────────
+    @app.route("/attachment/<path:file_id>")
+    def attachment_detail(file_id: str):
+        selected = _find_visible_attachment(file_id)
+        if not selected:
+            abort(404)
+
+        record = selected["record"]
+        item = selected["item"]
+        display_label = _attachment_display_title(
+            item, selected["index"], record["label"]
+        )
+        subtitle = _attachment_search_subtitle(item, record["label"])
+        similar = _similar_attachments(selected)
+
+        return render_template(
+            "attachment.html",
+            file_id=file_id,
+            display_label=display_label,
+            subtitle=subtitle,
+            similar=similar,
+            bot_username=BOT_USERNAME,
+            site_name=SITE_NAME,
+            title=f"{display_label} | {SITE_NAME}",
+            og_title=f"{display_label} — {SITE_NAME}",
+            og_description=subtitle or display_label,
+            og_url=f"/attachment/{file_id}",
             og_image="",
         )
 
