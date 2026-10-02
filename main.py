@@ -43,12 +43,11 @@ def main():
     from telegram.ext import JobQueue
     import httpx, asyncio
 
-    # حذف أي webhook قديم قبل بدء الـ polling
+    # حذف أي webhook قديم قبل بدء الـ polling مع الإبقاء على التحديثات المعلّقة.
     try:
         asyncio.get_event_loop().run_until_complete(
             httpx.AsyncClient().get(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook",
-                params={"drop_pending_updates": "true"},
                 timeout=10,
             )
         )
@@ -73,7 +72,7 @@ def main():
     app.add_error_handler(_error_handler)
 
     logging.info("البوت يعمل بنظام Long Polling...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
