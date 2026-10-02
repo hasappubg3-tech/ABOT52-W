@@ -15,11 +15,7 @@
   {% if results %}
   <div class="notes-list">
     {% for note in results %}
-    {% if note.is_attachment %}
-    <a href="{{ note.url }}" class="note-card" target="_blank" rel="noopener noreferrer">
-    {% else %}
     <a href="{{ note.url }}" class="note-card">
-    {% endif %}
       <div class="note-thumb">
         {% if note.thumb_url %}
           <img src="/thumb/{{ note.id }}" alt="{{ note.display_label }}" loading="lazy">

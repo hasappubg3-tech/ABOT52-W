@@ -50,11 +50,7 @@
   {% if contents %}
   <div class="notes-list">
     {% for note in contents %}
-    {% if note.is_attachment %}
-    <a href="/file/{{ note.file_id }}" class="note-card" target="_blank" rel="noopener noreferrer">
-    {% else %}
-    <a href="/note/{{ note.id }}" class="note-card">
-    {% endif %}
+    <a href="{{ note.url }}" class="note-card">
       <!-- Thumbnail -->
       <div class="note-thumb">
         {% if note.thumb_url %}
@@ -78,7 +74,7 @@
         <div class="note-meta">
           {% if note.is_attachment %}
           <span class="meta-item">
-            <span class="meta-val">{{ note.group_label | strip_emoji }}</span>
+            <span class="meta-val">{{ note.subtitle | strip_emoji }}</span>
           </span>
           {% else %}
           {% if note.rating.count > 0 %}

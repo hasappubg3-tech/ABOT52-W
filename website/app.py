@@ -415,21 +415,6 @@ def _attachment_title(item: dict, index: int) -> str:
     return _append_year(title or f"الملف {index}", year)[:160]
 
 
-def _file_attachments(items: list) -> list:
-    """يعيد كل ملفات الزر القابلة للعرض مع عناوينها وترتيبها."""
-    return [
-        {
-            "file_id": item["file_id"],
-            "title": _attachment_title(item, index),
-        }
-        for index, item in enumerate(
-            (item for item in items
-             if item.get("type") in {"document", "file"} and item.get("file_id")),
-            start=1,
-        )
-    ]
-
-
 def _file_items(items: list) -> list:
     return [
         (index, item)
@@ -445,8 +430,39 @@ def _attachment_display_title(item: dict, index: int, group_label: str = "") -> 
     title = _attachment_title(item, index)
     if title == f"الملف {index}":
         title = strip_emoji(group_label) or title
-    year = _release_year(_content_metadata_lines([item]), group_label)
+    # سنة الملف نفسه لها الأولوية؛ سنة زر البوت ليست سنة كل ملف تحته.
+    year = _release_year(_content_metadata_lines([item])) or _release_year([], group_label)
     return _append_year(title, year)
+
+
+def _independent_notes(btn: dict, items: list | None = None) -> list:
+    """عرض ملفات زر البوت كبطاقات مستقلة في الموقع دون تغيير بيانات البوت."""
+    if items is None:
+        items = _items(btn["id"])
+    files = _file_items(items)
+    if not files:
+        return [{**_enrich(btn), "is_attachment": False, "url": f"/note/{btn['id']}"}]
+
+    cards = []
+    seen = set()
+    for index, item in files:
+        file_id = item["file_id"]
+        if file_id in seen:
+            continue
+        seen.add(file_id)
+        added_at = _content_item_timestamp(item) or _timestamp_value(btn.get("created_at"))
+        cards.append({
+            "id": btn["id"],
+            "file_id": file_id,
+            "url": f"/attachment/{file_id}",
+            "display_label": _attachment_display_title(item, index, btn.get("label", "")),
+            "subtitle": _attachment_search_subtitle(item, btn.get("label", "")),
+            "thumb_url": False,
+            "is_new": bool(added_at and time.time() - added_at < NEW_DAYS * 86400),
+            "click_count": 0,
+            "is_attachment": True,
+        })
+    return cards
 
 
 def _find_visible_attachment(file_id: str) -> dict | None:
@@ -734,15 +750,11 @@ def _search_content(q: str, limit: int = 50) -> list:
                 if file_id in seen_files:
                     continue
                 seen_files.add(file_id)
-                item_text = _search_item_text(item)
-                years = _year_candidates(f"{label} {item_text}")
-                display_label = _append_year(
-                    _attachment_title(item, index),
-                    max(years, default=""),
-                )
+                display_label = _attachment_display_title(item, index, label)
+                years = _year_candidates(display_label)
                 results.append({
                     "id": bid,
-                    "url": f"/file/{file_id}",
+                    "url": f"/attachment/{file_id}",
                     "display_label": display_label,
                     "subtitle": _attachment_search_subtitle(item, label),
                     "thumb_url": False,
@@ -891,7 +903,8 @@ def create_app() -> Flask:
         btn = _btn(bid)
         if not btn:
             abort(404)
-        children   = _children(bid)
+        # الروابط القديمة لحزمة ملفات تعرض بطاقات مستقلة، لا صفحة ملزمة تجمعها.
+        children = [btn] if btn.get("type") == "content" else _children(bid)
         if btn.get("type") == "compound" and btn.get("sort_by_year", 0):
             children = sorted(children, key=_compound_sort_key)
         # نُطبّق فلتر القوائم فقط إذا كنا مباشرةً داخل صف دراسي (parent_id=None)
@@ -902,11 +915,17 @@ def create_app() -> Flask:
         else:
             menus = [c for c in children if c.get("type") != "content"]
         contents = []
+        seen_files = set()
         for child in children:
             if child.get("type") != "content":
                 continue
-            # كل عنصر محتوى يبقى ملزمة مستقلة؛ ملفاتها تظهر داخل صفحة الملزمة.
-            contents.append({**_enrich(child), "is_attachment": False})
+            for card in _independent_notes(child):
+                file_id = card.get("file_id")
+                if file_id and file_id in seen_files:
+                    continue
+                if file_id:
+                    seen_files.add(file_id)
+                contents.append(card)
         breadcrumb = _breadcrumb(bid)
         return render_template("category.html",
             btn=btn,
@@ -929,6 +948,11 @@ def create_app() -> Flask:
         if not btn or btn.get("type") != "content":
             abort(404)
         items         = _items(bid)
+        if _file_items(items):
+            notes = _independent_notes(btn, items)
+            if len(notes) == 1:
+                return redirect(notes[0]["url"])
+            return redirect(url_for("category", bid=bid))
         rating        = _rating(bid)
         breadcrumb    = _breadcrumb(bid)
         thumb         = _has_content_media(bid)
@@ -946,9 +970,6 @@ def create_app() -> Flask:
             for it in items
             if it.get("type") == "photo" and it.get("file_id")
         ]
-        # أظهر جميع الملفات المرفقة بالزر، لا أول ملف فقط.
-        attachments = _file_attachments(items)
-
         # رابط deep-link للبوت لفتح الملزمة مباشرة
         bot_deep_link = f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
 
@@ -961,7 +982,6 @@ def create_app() -> Flask:
             display_label=display_label,
             preview_text=preview_text,
             photos=photos,
-            attachments=attachments,
             bot_deep_link=bot_deep_link,
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,

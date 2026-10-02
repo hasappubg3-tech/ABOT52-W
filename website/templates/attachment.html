@@ -64,9 +64,9 @@
   </section>
   {% endif %}
 
-  {% if similar %}
   <section class="attachment-section">
     <h2 class="section-title">ملفات مشابهة</h2>
+    {% if similar %}
     <div class="notes-list">
       {% for file in similar %}
       <a href="{{ file.url }}" class="note-card">
@@ -90,7 +90,9 @@
       </a>
       {% endfor %}
     </div>
+    {% else %}
+    <p class="no-rating">لا توجد ملفات مشابهة حالياً.</p>
+    {% endif %}
   </section>
-  {% endif %}
 </div>
 {% endblock %}
