@@ -21,3 +21,15 @@ python-telegram-bot[job-queue,webhooks]==20.7
 requests
 TgCrypto
 PyMuPDF
+dnspython
+email_validator
+flask
+google-generativeai
+gunicorn
+httpx~=0.25.2
+pymongo
+PyMuPDF
+pyrogram
+python-telegram-bot[job-queue,webhooks]==20.7
+requests
+TgCrypto
