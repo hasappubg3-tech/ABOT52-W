@@ -1,7 +1,7 @@
 """Website-only regression tests; no Telegram requests or database writes."""
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from website import app as web
 
@@ -38,7 +38,6 @@ class IndependentNotesTests(unittest.TestCase):
             patch.object(web, "_items", return_value=self.files),
             patch.object(web, "_search_index_records", return_value=[self.record]),
             patch.object(web, "_file_url", return_value=None),
-            patch.object(web, "_storage_message_url", return_value=""),
             patch.object(web, "_breadcrumb", return_value=[]),
             patch.object(web, "_rating", return_value={"count": 0, "avg": 0, "stars": ""}),
             patch.object(web, "_has_content_media", return_value=False),
@@ -81,12 +80,12 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertEqual(page.count('href="/attachment/first-pdf"'), 1)
 
     def test_selected_file_is_separate_from_similar_files(self):
-        with patch.object(web, "_file_url", return_value="https://unused.invalid/file"):
-            response = self.client.get("/attachment/first-pdf")
+        response = self.client.get("/attachment/first-pdf")
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         detail, similar = page.split("ملفات مشابهة", 1)
-        self.assertIn('src="/file/first-pdf"', detail)
+        self.assertIn(web._bot_download_url(10), detail)
+        self.assertNotIn('src="/file/', detail)
         self.assertNotIn("second-pdf", detail)
         self.assertIn('href="/attachment/second-pdf"', similar)
         self.assertNotIn('href="/attachment/first-pdf"', similar)
@@ -111,13 +110,56 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertIn("2025", title)
         self.assertNotIn("2026", title)
 
-    def test_unavailable_file_has_explicit_status_and_similar_links(self):
+    def test_download_through_bot_does_not_depend_on_preview_availability(self):
         response = self.client.get("/attachment/first-pdf")
         page = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("معاينة الملف غير متاحة", page)
+        self.assertIn("تحميل الملزمة من البوت", page)
+        self.assertIn(web._bot_download_url(10), page)
+        self.assertNotIn("معاينة الملف غير متاحة", page)
+        self.assertNotIn("فتح رسالة الملف", page)
+        web._file_url.assert_not_called()
         self.assertIn('href="/attachment/second-pdf"', page)
         self.assertNotIn('<iframe class="pdf-embed"', page)
+
+    def test_old_direct_document_links_redirect_only_to_the_bot(self):
+        for file_id in ("first-pdf", "second-pdf"):
+            response = self.client.get(f"/file/{file_id}")
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.location, web._bot_download_url(10))
+        web._file_url.assert_not_called()
+
+    def test_unknown_direct_file_links_are_not_proxied(self):
+        self.assertEqual(self.client.get("/file/hidden-pdf").status_code, 404)
+        web._file_url.assert_not_called()
+
+    def test_visible_gallery_photos_still_work_without_exposing_api_urls(self):
+        photo = {"type": "photo", "file_id": "visible-photo"}
+        records = [{**self.record, "items": [*self.files, photo]}]
+        upstream = Mock()
+        upstream.headers = {"Content-Type": "image/jpeg"}
+        upstream.iter_content.return_value = [b"image-bytes"]
+        with patch.object(web, "_search_index_records", return_value=records), \
+                patch.object(web, "_file_url", return_value="https://unused.invalid/image"), \
+                patch.object(web._req, "get", return_value=upstream):
+            response = self.client.get("/file/visible-photo")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data, b"image-bytes")
+            self.assertNotIn("Location", response.headers)
+            upstream.close.assert_called_once()
+
+    def test_pdf_cannot_be_downloaded_through_a_photo_record(self):
+        records = [{**self.record, "items": [
+            *self.files, {"type": "photo", "file_id": "mislabelled-pdf"},
+        ]}]
+        upstream = Mock()
+        upstream.headers = {"Content-Type": "application/pdf"}
+        with patch.object(web, "_search_index_records", return_value=records), \
+                patch.object(web, "_file_url", return_value="https://unused.invalid/pdf"), \
+                patch.object(web._req, "get", return_value=upstream):
+            response = self.client.get("/file/mislabelled-pdf")
+        self.assertEqual(response.status_code, 404)
+        upstream.close.assert_called_once()
 
     def test_unknown_file_is_not_accessible(self):
         self.assertEqual(self.client.get("/attachment/unknown-pdf").status_code, 404)

@@ -9,6 +9,12 @@ Every document must be a separate note on the website, even when several documen
 
 **How to apply:** Keep category, search, latest-content, and old note links consistent with independent file pages. Do not alter shared content data merely to separate the website's presentation.
 
+The user's download rule: «كل الملازم قابلة للتحميل من تلكرام عن طريق البوت حصرا».
+
+**Why:** The user rejected storage-channel message links and preview-availability checks as substitutes for downloading through the bot.
+
+**How to apply:** Every note must offer its bot deep link regardless of website preview availability. Do not offer direct document downloads, PDF embeds, or links to storage-channel messages on the website. Keep related notes as separate recommendations.
+
 The user's instruction: «لا تعدل شيء بالبوت دون علمي».
 
 **Why:** The user asked to keep the bot unchanged while correcting the website.

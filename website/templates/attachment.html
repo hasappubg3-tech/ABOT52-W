@@ -32,37 +32,13 @@
       <p class="attachment-page-meta">{{ subtitle | strip_emoji }}</p>
       {% endif %}
       <div class="detail-actions">
-        {% if file_available %}
-        <a href="/file/{{ file_id }}" target="_blank" rel="noopener noreferrer" class="btn btn--primary btn--lg">
-          فتح الملف
+        <a href="{{ bot_deep_link }}" target="_blank" rel="noopener noreferrer" class="btn btn--primary btn--lg">
+          تحميل الملزمة من البوت
         </a>
-        {% elif channel_message_url %}
-        <a href="{{ channel_message_url }}" target="_blank" rel="noopener noreferrer" class="btn btn--primary btn--lg">
-          فتح رسالة الملف في Telegram
-        </a>
-        {% endif %}
       </div>
+      <p class="attachment-page-meta">التحميل حصراً عبر بوت Telegram. اضغط زر التحميل، ثم اضغط «بدء» داخل البوت لاستلام الملفات.</p>
     </div>
   </section>
-
-  {% if file_available %}
-  <section class="pdf-section" aria-label="معاينة الملزمة">
-    <div class="pdf-wrapper">
-      <iframe class="pdf-embed" src="/file/{{ file_id }}" title="{{ display_label | strip_emoji }}" loading="lazy"></iframe>
-    </div>
-  </section>
-  {% else %}
-  <section class="pdf-section" aria-label="حالة معاينة الملف">
-    <div class="attachment-unavailable">
-      <strong>معاينة الملف غير متاحة على الموقع حالياً.</strong>
-      {% if channel_message_url %}
-      <p>الملف موجود في رسالة مستقلة بقناة التخزين. قد تحتاج إلى صلاحية دخول القناة لفتحه.</p>
-      {% else %}
-      <p>تعذر الوصول إلى الملف؛ يلزم تحديث معرّف Telegram الخاص به.</p>
-      {% endif %}
-    </div>
-  </section>
-  {% endif %}
 
   <section class="attachment-section">
     <h2 class="section-title">ملفات مشابهة</h2>

@@ -478,21 +478,9 @@ def _find_visible_attachment(file_id: str) -> dict | None:
     return None
 
 
-def _storage_message_url(item: dict) -> str:
-    message_id = item.get("channel_msg_id")
-    if not message_id:
-        return ""
-    try:
-        from bot.data_access import get_storage_channel_id
-        channel_id = str(get_storage_channel_id() or "").strip()
-    except Exception:
-        return ""
-
-    if channel_id.startswith("@"):
-        return f"https://t.me/{channel_id[1:]}/{message_id}"
-    if channel_id.startswith("-100") and channel_id[4:].isdigit():
-        return f"https://t.me/c/{channel_id[4:]}/{message_id}"
-    return ""
+def _bot_download_url(bid: int) -> str:
+    """رابط يدعمه البوت حالياً؛ تحميل الملازم يتم من خلاله حصراً."""
+    return f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
 
 
 _SIMILAR_TITLE_STOPWORDS = {
@@ -971,7 +959,7 @@ def create_app() -> Flask:
             if it.get("type") == "photo" and it.get("file_id")
         ]
         # رابط deep-link للبوت لفتح الملزمة مباشرة
-        bot_deep_link = f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
+        bot_deep_link = _bot_download_url(bid)
 
         return render_template("note.html",
             btn=btn,
@@ -1006,17 +994,13 @@ def create_app() -> Flask:
         )
         subtitle = _attachment_search_subtitle(item, record["label"])
         similar = _similar_attachments(selected)
-        file_available = bool(_file_url(file_id))
-        channel_message_url = _storage_message_url(item)
 
         return render_template(
             "attachment.html",
-            file_id=file_id,
             display_label=display_label,
             subtitle=subtitle,
             similar=similar,
-            file_available=file_available,
-            channel_message_url=channel_message_url,
+            bot_deep_link=_bot_download_url(selected["button"]["id"]),
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",
@@ -1068,32 +1052,48 @@ def create_app() -> Flask:
                             headers={"Cache-Control": "max-age=3600"})
         return redirect(url_for("static", filename="img/no-thumb.svg"))
 
-    # ── File proxy بـ file_id (للغاليري والـ PDF) ────────────────────
+    # ── معاينة الصور فقط؛ الملازم تُحمّل من خلال البوت حصراً ──────
     @app.route("/file/<path:file_id>")
     def file_proxy(file_id: str):
+        selected = _find_visible_attachment(file_id)
+        if selected:
+            return redirect(_bot_download_url(selected["button"]["id"]))
+
+        visible_photo = any(
+            item.get("type") == "photo" and item.get("file_id") == file_id
+            for record in _search_index_records()
+            for item in record["items"]
+        )
+        if not visible_photo:
+            abort(404)
         url = _file_url(file_id)
         if not url:
             abort(404)
-        # للـ PDF: نعيد البيانات مباشرة حتى يعمل الـ iframe في المتصفح
         try:
             r = _req.get(url, timeout=30, stream=True)
+            r.raise_for_status()
             content_type = r.headers.get("Content-Type", "application/octet-stream")
-            is_pdf = "pdf" in content_type or file_id.lower().endswith(".pdf")
-            if is_pdf:
-                def generate():
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            yield chunk
-                resp_headers = {
-                    "Content-Type": content_type,
-                    "Content-Disposition": "inline",
-                }
-                if "Content-Length" in r.headers:
-                    resp_headers["Content-Length"] = r.headers["Content-Length"]
-                return Response(generate(), status=200, headers=resp_headers)
-        except Exception as e:
-            logging.debug(f"[file_proxy] fallback redirect: {e}")
-        return redirect(url)
+        except _req.RequestException:
+            logging.warning("تعذر تحميل صورة المعاينة من Telegram.")
+            abort(502)
+        if content_type.split(";", 1)[0].strip().lower() not in {
+            "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif",
+        }:
+            r.close()
+            abort(404)
+
+        def generate():
+            try:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+            finally:
+                r.close()
+
+        return Response(
+            generate(), mimetype=content_type.split(";", 1)[0],
+            headers={"X-Content-Type-Options": "nosniff"},
+        )
 
     # ── robots.txt ───────────────────────────────────────────────────
     @app.route("/robots.txt")
