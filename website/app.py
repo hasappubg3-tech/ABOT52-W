@@ -855,6 +855,17 @@ def create_app() -> Flask:
     app.secret_key = os.environ.get("SESSION_SECRET", "alameer-secret")
     app.jinja_env.filters["strip_emoji"] = strip_emoji
 
+    @app.before_request
+    def check_database_configuration():
+        if request.endpoint != "static" and not os.environ.get("MONGODB_URI"):
+            return Response(
+                "Website setup is incomplete: add MONGODB_URI in Replit Secrets, "
+                "then restart the Website workflow. No educational content can "
+                "be loaded until the existing MongoDB database is connected.",
+                status=503,
+                mimetype="text/plain",
+            )
+
     # ── الصفحة الرئيسية ──────────────────────────────────────────────
     @app.route("/")
     def index():

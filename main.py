@@ -38,7 +38,8 @@ def main():
     if not MONGODB_URI:
         logging.error("MONGODB_URI غير موجود!"); return
     init_db()
-    _start_flask()
+    if os.environ.get("RUN_EMBEDDED_WEBSITE", "1") != "0":
+        _start_flask()
     from telegram.ext import JobQueue
     import httpx, asyncio
 

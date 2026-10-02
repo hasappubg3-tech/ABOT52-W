@@ -8,7 +8,12 @@
 python main.py
 ```
 
-يُشغَّل عبر workflow باسم **Start application** تلقائياً عند فتح المشروع.
+زر Run يشغّل workflow **Project** الذي يشغّل خدمتين:
+
+- **Start application**: `RUN_EMBEDDED_WEBSITE=0 python main.py` — بوت Telegram فقط.
+- **Website**: `python run_website.py` — موقع Flask على `0.0.0.0:5000`.
+
+تشغيل `python main.py` مباشرةً يشغّل الموقع المدمج أيضاً. عند تشغيل الموقع بشكل مستقل، استخدم `RUN_EMBEDDED_WEBSITE=0` لتجنّب تعارض المنفذ.
 
 ## المتطلبات (Secrets)
 
@@ -25,7 +30,7 @@ python main.py
 - **python-telegram-bot 20.7** — Long Polling mode
 - **MongoDB (pymongo)** — قاعدة البيانات الرئيسية
 - **Google Gemini** — ميزات الذكاء الاصطناعي
-- **Flask + Gunicorn** — موجود في الكود (للـ webhook إذا احتجت)
+- **Flask + Gunicorn** — الموقع الإلكتروني المستقل
 
 ## هيكل المشروع
 
@@ -53,6 +58,9 @@ bot/
 
 ## حالة الإعداد على Replit
 
-- تم تثبيت جميع حزم Python (كانت مفقودة `httpx` وغيرها عن بيئة uv الجديدة بعد الاستيراد).
-- تم ضبط الأسرار (Secrets): `TELEGRAM_BOT_TOKEN`، `MONGODB_URI`، `GEMINI_API_KEY`. `SUPER_ADMIN_ID` كان مضبوطاً كمتغير بيئة عادي مسبقاً.
-- البوت يعمل الآن عبر workflow "Start application" بنظام Long Polling ومتصل بـ MongoDB وTelegram بنجاح.
+- تم تثبيت حزم `requirements.txt` في بيئة Python 3.11.
+- `SESSION_SECRET` متوفر؛ `TELEGRAM_BOT_TOKEN` و`MONGODB_URI` و`GEMINI_API_KEY` غير متوفرة عند الإعداد الحالي.
+- البوت لا يستطيع العمل قبل إضافة توكن Telegram ورابط MongoDB في Secrets. مفتاح Gemini مطلوب لميزات الذكاء الاصطناعي.
+- الموقع يعرض رسالة إعداد واضحة برمز HTTP 503 عند غياب `MONGODB_URI` بدلاً من عرض محتوى وهمي أو الاتصال بقاعدة بيانات بديلة.
+- بعد إضافة الأسرار، أعد تشغيل الخدمتين. أوقف أي نسخة أخرى من البوت قبل تشغيله لتجنّب تعارض Long Polling.
+- لم يتم التحقق من الاتصال الفعلي بـ Telegram أو MongoDB لأن المستخدم لم يقدّم الأسرار.
