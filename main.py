@@ -3,6 +3,10 @@ from bot.loader import load_bot_symbols
 
 globals().update(load_bot_symbols())
 
+# httpx logs full Telegram API URLs at INFO level, which would expose the bot token.
+import logging as _logging
+_logging.getLogger("httpx").setLevel(_logging.WARNING)
+
 async def _error_handler(update, context):
     """معالج مركزي للأخطاء."""
     from telegram.error import Conflict, NetworkError, TimedOut
