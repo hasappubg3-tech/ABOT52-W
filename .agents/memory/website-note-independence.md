@@ -20,3 +20,9 @@ The user's instruction: «لا تعدل شيء بالبوت دون علمي».
 **Why:** The user asked to keep the bot unchanged while correcting the website.
 
 **How to apply:** A website change is not permission to edit the bot. Tell the user before making any bot changes.
+
+Student/community Telegram group entries, including their nested pages, must remain bot-only and not appear on the study-materials website.
+
+**Why:** The user specified the website is for study notes/books/summaries and identified the sixth-grade student group as bot-only.
+
+**How to apply:** Filter group entries from website navigation, search, and direct pages, while retaining their database records and bot visibility.

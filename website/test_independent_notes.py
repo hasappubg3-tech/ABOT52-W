@@ -31,6 +31,7 @@ class IndependentNotesTests(unittest.TestCase):
         }
         patches = [
             patch.dict(os.environ, {"MONGODB_URI": "mongodb://unused.invalid/botdb"}),
+            patch.object(web, "_search_index_cache", {"expires": 0, "records": None}),
             patch.object(web, "_btn", side_effect=lambda bid: {
                 10: self.group, 5: self.parent,
             }.get(bid)),
@@ -181,6 +182,50 @@ class IndependentNotesTests(unittest.TestCase):
             response = self.client.get("/note/10")
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("ملفات الملزمة", response.get_data(as_text=True))
+
+    def test_student_groups_and_their_content_are_hidden_from_site_surfaces(self):
+        buttons = {
+            1: {"id": 1, "parent_id": None, "type": "menu",
+                "label": "السادس العلمي", "ord": 1},
+            2: {"id": 2, "parent_id": 1, "type": "content",
+                "label": "گــــروب طــــلاب الــــسادس", "ord": 1},
+            3: {"id": 3, "parent_id": 1, "type": "content",
+                "label": "ملزمة الاحياء", "ord": 2},
+            4: {"id": 4, "parent_id": 2, "type": "content",
+                "label": "ملزمة كيمياء", "ord": 1},
+        }
+        docs = {
+            2: {"id": 2, "button_id": 2, "type": "text",
+                "content": "مجموعة طلاب السادس"},
+            3: {"id": 3, "button_id": 3, "type": "file",
+                "file_id": "school-note", "content": "ملزمة الاحياء"},
+            4: {"id": 4, "button_id": 4, "type": "file",
+                "file_id": "group-child-note", "content": "ملزمة كيمياء"},
+        }
+        button_collection = Mock()
+        button_collection.find.return_value.sort.return_value = list(buttons.values())
+        button_collection.find_one.side_effect = (
+            lambda query, projection=None: buttons.get(query["id"])
+        )
+        item_collection = Mock()
+        item_collection.find.return_value.sort.return_value = list(docs.values())
+        database = {"buttons": button_collection, "content_items": item_collection}
+
+        with patch.object(web, "_col", side_effect=lambda name: database[name]), \
+                patch.object(web, "_search_index_cache", {"expires": 0, "records": None}):
+            visible = web._search_index_records()
+            self.assertEqual([record["button"]["id"] for record in visible], [3])
+            self.assertEqual([button["id"] for button in web._children(1)], [3])
+            self.assertIsNone(web._btn(2))
+            self.assertIsNone(web._btn(4))
+            self.assertEqual(web._btn(3)["id"], 3)
+
+            with patch.object(web, "_btn", side_effect=lambda bid: (
+                web._col("buttons").find_one({"id": bid})
+                if not any(web._is_bot_only_entry(b) and b["id"] == bid
+                           for b in buttons.values()) else None
+            )):
+                self.assertEqual(self.client.get("/cat/2").status_code, 404)
 
 
 if __name__ == "__main__":

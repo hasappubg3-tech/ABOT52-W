@@ -165,7 +165,33 @@ def _file_url(file_id: str) -> str | None:
 # ─────────────────────────────────────────────────────────────────────
 
 def _btn(bid: int):
-    return _col("buttons").find_one({"id": bid, "deleted": {"$ne": 1}, "hidden": {"$ne": 1}})
+    button = _col("buttons").find_one(
+        {"id": bid, "deleted": {"$ne": 1}, "hidden": {"$ne": 1}}
+    )
+    if not button or _is_bot_only_entry(button):
+        return None
+
+    parent_id = button.get("parent_id")
+    visited = {bid}
+    while parent_id is not None:
+        if parent_id in visited:
+            return None
+        visited.add(parent_id)
+        parent = _col("buttons").find_one(
+            {"id": parent_id}, {"id": 1, "parent_id": 1, "label": 1}
+        )
+        if not parent:
+            break
+        if _is_bot_only_entry(parent):
+            return None
+        parent_id = parent.get("parent_id")
+    return button
+
+
+def _is_bot_only_entry(button: dict) -> bool:
+    """Student/community group entries belong to the bot, not the materials site."""
+    label = _normalize_search_text(button.get("label") or "")
+    return any(word in label for word in ("كروب", "کروب", "گروب", "جروب", "group"))
 
 
 def _has_visible_ancestors(btn: dict, ancestors: dict) -> bool:
@@ -179,6 +205,8 @@ def _has_visible_ancestors(btn: dict, ancestors: dict) -> bool:
         parent = ancestors.get(parent_id)
         if not parent:
             return False
+        if _is_bot_only_entry(parent):
+            return False
         parent_id = parent.get("parent_id")
     return True
 
@@ -189,7 +217,8 @@ def _children(pid):
         q["parent_id"] = None
     else:
         q["parent_id"] = pid
-    return list(_col("buttons").find(q).sort([("ord", 1), ("id", 1)]))
+    buttons = _col("buttons").find(q).sort([("ord", 1), ("id", 1)])
+    return [button for button in buttons if not _is_bot_only_entry(button)]
 
 
 def _items(bid: int):
@@ -624,7 +653,9 @@ def _search_index_records() -> list:
         allowed_terms = tuple(_normalize_search_text(word) for word in _CONTENT_WHITELIST)
         records = []
         for btn in sorted(visible_buttons.values(), key=lambda doc: str(doc.get("id", ""))):
-            if btn.get("type") != "content" or not _has_visible_ancestors(btn, visible_buttons):
+            if (btn.get("type") != "content"
+                    or _is_bot_only_entry(btn)
+                    or not _has_visible_ancestors(btn, visible_buttons)):
                 continue
 
             items = items_by_button.get(btn["id"], [])
