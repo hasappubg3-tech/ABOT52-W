@@ -7,9 +7,13 @@ import re
 import time
 import logging
 import unicodedata
+import secrets
+from datetime import timedelta
 from threading import Lock
 import requests as _req
-from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response
+from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash
+from pymongo.errors import PyMongoError
+from . import feedback as feedback_store
 
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Mdry7bot")
@@ -193,20 +197,11 @@ def _items(bid: int):
 
 
 def _rating(bid: int) -> dict:
-    pipeline = [
-        {"$match": {"button_id": bid}},
-        {"$group": {"_id": None, "cnt": {"$sum": 1}, "avg": {"$avg": "$rating"}}}
-    ]
-    result = list(_col("button_ratings").aggregate(pipeline))
-    if not result:
-        return {"count": 0, "avg": 0.0, "stars": ""}
-    r = result[0]
-    avg = float(r.get("avg") or 0)
-    full  = int(avg)
-    half  = 1 if (avg - full) >= 0.5 else 0
-    empty = 5 - full - half
-    stars = "★" * full + ("½" if half else "") + "☆" * empty
-    return {"count": r["cnt"], "avg": round(avg, 1), "stars": stars}
+    return feedback_store.rating_summary(_col, "btn", bid)
+
+
+def _feedback_context(button, item=None):
+    return feedback_store.context(_col, button, item)
 
 
 def _breadcrumb(bid: int) -> list:
@@ -852,7 +847,14 @@ def _latest_notes(limit: int = 8) -> list:
 
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
-    app.secret_key = os.environ.get("SESSION_SECRET", "alameer-secret")
+    app.secret_key = os.environ.get("SESSION_SECRET") or secrets.token_hex(32)
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        PERMANENT_SESSION_LIFETIME=timedelta(days=365),
+        MAX_CONTENT_LENGTH=32 * 1024,
+    )
     app.jinja_env.filters["strip_emoji"] = strip_emoji
 
     @app.before_request
@@ -960,11 +962,15 @@ def create_app() -> Flask:
         ]
         # رابط deep-link للبوت لفتح الملزمة مباشرة
         bot_deep_link = _bot_download_url(bid)
+        feedback = _feedback_context(btn)
 
         return render_template("note.html",
             btn=btn,
             items=items,
             rating=rating,
+            feedback=feedback,
+            feedback_url=url_for("note_feedback", bid=bid, action="rate").rsplit("/", 1)[0],
+            csrf_token=session.get("feedback_csrf", ""),
             breadcrumb=breadcrumb,
             thumb=thumb,
             display_label=display_label,
@@ -994,9 +1000,13 @@ def create_app() -> Flask:
         )
         subtitle = _attachment_search_subtitle(item, record["label"])
         similar = _similar_attachments(selected)
+        feedback = _feedback_context(selected["button"], item)
 
         return render_template(
             "attachment.html",
+            feedback=feedback,
+            feedback_url=url_for("attachment_feedback", file_id=file_id, action="rate").rsplit("/", 1)[0],
+            csrf_token=session.get("feedback_csrf", ""),
             display_label=display_label,
             subtitle=subtitle,
             similar=similar,
@@ -1009,6 +1019,41 @@ def create_app() -> Flask:
             og_url=f"/attachment/{file_id}",
             og_image="",
         )
+
+    def save_feedback(button, item, action, destination):
+        if action not in {"rate", "comment", "delete"}:
+            abort(404)
+        try:
+            message = feedback_store.submit(_col, button, item, action, request.form)
+            flash(message, "success")
+        except ValueError as error:
+            flash(str(error), "error")
+        except PyMongoError:
+            # Do not log connection strings or database exception details.
+            app.logger.error("Website feedback database operation failed")
+            flash("تعذّر حفظ المشاركة حالياً. حاول مرة أخرى لاحقاً.", "error")
+        return redirect(destination + "#feedback", code=303)
+
+    @app.post("/feedback/attachment/<path:file_id>/<action>")
+    def attachment_feedback(file_id, action):
+        selected = _find_visible_attachment(file_id)
+        if not selected:
+            abort(404)
+        return save_feedback(selected["button"], selected["item"], action,
+                             url_for("attachment_detail", file_id=file_id))
+
+    @app.post("/feedback/note/<int:bid>/<action>")
+    def note_feedback(bid, action):
+        button = _btn(bid)
+        if not button or button.get("type") != "content" or _file_items(_items(bid)):
+            abort(404)
+        return save_feedback(button, None, action, url_for("note", bid=bid))
+
+    @app.after_request
+    def feedback_cache_policy(response):
+        if request.endpoint in {"note", "attachment_detail", "note_feedback", "attachment_feedback"}:
+            response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     # ── صفحة البحث ───────────────────────────────────────────────────
     @app.route("/search")

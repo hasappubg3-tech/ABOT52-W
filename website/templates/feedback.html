@@ -1,0 +1,106 @@
+<link rel="stylesheet" href="/static/css/feedback.css">
+
+<section class="feedback" id="feedback" aria-labelledby="feedback-title">
+  <div class="feedback-heading">
+    <div>
+      <p class="feedback-eyebrow">رأيكم يهمنا</p>
+      <h2 class="section-title" id="feedback-title">التقييم والتعليقات</h2>
+    </div>
+    <div class="feedback-summary" aria-label="ملخص التقييم">
+      <span class="feedback-average">{{ feedback.rating.avg }}</span>
+      <span class="feedback-summary-copy">
+        <span class="feedback-stars" aria-label="{{ feedback.rating.avg }} من 5 نجوم">
+          {% for i in range(1, 6) %}<span class="{% if i <= feedback.rating.avg|round|int %}is-filled{% endif %}" aria-hidden="true">★</span>{% endfor %}
+        </span>
+        <span>{{ feedback.rating.count }} تقييم</span>
+      </span>
+    </div>
+  </div>
+
+  {% if feedback.shared %}
+  <p class="feedback-shared" role="note">التقييمات والتعليقات مشتركة بين صفحات المحتوى التابعة للمجموعة نفسها على تيليغرام.</p>
+  {% endif %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="feedback-flashes" aria-live="polite">
+      {% for category, message in messages %}
+      <p class="feedback-flash feedback-flash--{{ category }}">{{ message }}</p>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="feedback-grid">
+    <section class="feedback-panel" aria-labelledby="rate-title">
+      <h3 id="rate-title">قيّم هذه الملزمة</h3>
+      {% if feedback.user_rating %}
+      <p class="feedback-current">تقييمك الحالي: <strong>{{ feedback.user_rating }} من 5</strong></p>
+      {% else %}
+      <p class="feedback-hint">اختر عدداً من النجوم لإرسال تقييمك دون الحاجة إلى كتابة اسم.</p>
+      {% endif %}
+      <form class="feedback-form feedback-rating-form" action="{{ feedback_url }}/rate" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <fieldset class="star-choice">
+          <legend class="sr-only">اختر تقييماً من نجمة إلى خمس نجوم</legend>
+          {% for i in range(5, 0, -1) %}
+          <input type="radio" id="feedback-star-{{ i }}" name="rating" value="{{ i }}" required {% if feedback.user_rating == i %}checked{% endif %}>
+          <label for="feedback-star-{{ i }}" title="{{ i }} من 5" aria-label="{{ i }} من 5 نجوم">★</label>
+          {% endfor %}
+        </fieldset>
+        <button class="btn btn--primary feedback-submit" type="submit">إرسال التقييم</button>
+      </form>
+    </section>
+
+    <section class="feedback-panel" aria-labelledby="comment-title">
+      <h3 id="comment-title">أضف تعليقاً</h3>
+      {% if feedback.comments %}
+        {% for comment in feedback.comments %}
+          {% if comment.owned %}
+          <p class="feedback-owned-note">لديك تعليق سابق. احذفه أولاً إذا أردت استبداله بتعليق جديد.</p>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
+      <form class="feedback-form" action="{{ feedback_url }}/comment" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="feedback-name">الاسم</label>
+        <input id="feedback-name" name="display_name" type="text" maxlength="80" value="{{ feedback.guest_name }}" autocomplete="name" required>
+        <label for="feedback-text">التعليق</label>
+        <textarea id="feedback-text" name="text" maxlength="2000" rows="4" required></textarea>
+        <button class="btn btn--primary feedback-submit" type="submit">نشر التعليق</button>
+      </form>
+    </section>
+  </div>
+
+  <div class="feedback-comments">
+    <h3 class="feedback-comments-title">تعليقات القراء <span>{{ feedback.comments|length }}</span></h3>
+    {% if feedback.comments %}
+    <ol class="feedback-list">
+      {% for comment in feedback.comments %}
+      <li class="feedback-comment">
+        <div class="feedback-comment-top">
+          <div>
+            <strong class="feedback-name">{{ comment.display_name }}</strong>
+            <time class="feedback-date">{{ comment.created_label }}</time>
+          </div>
+          {% if comment.owned %}
+          <form action="{{ feedback_url }}/delete" method="post" class="feedback-delete-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="comment_id" value="{{ comment.id }}">
+            <button class="feedback-delete" type="submit">حذف تعليقي</button>
+          </form>
+          {% endif %}
+        </div>
+        <p class="feedback-comment-text">{{ comment.text }}</p>
+        <div class="feedback-reactions" aria-label="التفاعلات">
+          <span>أعجبني {{ comment.likes }}</span>
+          <span>لم يعجبني {{ comment.dislikes }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="feedback-empty">لا توجد تعليقات بعد. كن أول من يشارك رأيه.</p>
+    {% endif %}
+  </div>
+</section>

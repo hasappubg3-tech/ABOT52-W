@@ -40,6 +40,10 @@ class IndependentNotesTests(unittest.TestCase):
             patch.object(web, "_file_url", return_value=None),
             patch.object(web, "_breadcrumb", return_value=[]),
             patch.object(web, "_rating", return_value={"count": 0, "avg": 0, "stars": ""}),
+            patch.object(web, "_feedback_context", return_value={
+                "rating": {"count": 0, "avg": 0, "stars": ""},
+                "comments": [], "user_rating": None, "guest_name": "", "shared": False,
+            }),
             patch.object(web, "_has_content_media", return_value=False),
             patch.object(web, "_col", side_effect=AssertionError("Unexpected database access")),
         ]
@@ -114,7 +118,7 @@ class IndependentNotesTests(unittest.TestCase):
         response = self.client.get("/attachment/first-pdf")
         page = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("تحميل الملزمة من البوت", page)
+        self.assertIn("تحميل من التلكرام", page)
         self.assertIn(web._bot_download_url(10), page)
         self.assertNotIn("معاينة الملف غير متاحة", page)
         self.assertNotIn("فتح رسالة الملف", page)
