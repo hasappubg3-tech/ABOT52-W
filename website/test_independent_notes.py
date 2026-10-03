@@ -74,6 +74,31 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertNotIn('href="/file/', page)
         self.assertNotIn("ملفات الملزمة", page)
 
+    def test_requested_homepage_and_footer_copy(self):
+        with patch.object(web, "_children", return_value=[
+            {"id": 1, "parent_id": None, "type": "menu", "label": "السادس العلمي"},
+        ]), patch.object(web, "_latest_notes", return_value=[]):
+            page = self.client.get("/").get_data(as_text=True)
+        self.assertIn("كل ما يحتاجه الطالب", page)
+        self.assertIn("اختار مرحلتك الدراسية...", page)
+        self.assertIn("جميع الملازم والكتب متاحة مجاناً عبر التلگرام", page)
+        self.assertIn("افتح البوت على التلگرام", page)
+        self.assertNotIn("ملازم وكتب دراسية مجانية لجميع الصفوف", page)
+        self.assertNotIn("الصفوف الدراسية", page)
+
+    def test_attachment_and_feedback_use_requested_copy(self):
+        with patch.object(web, "_feedback_context", return_value={
+            "rating": {"count": 0, "avg": 0, "stars": ""},
+            "comments": [], "user_rating": None, "guest_name": "", "shared": True,
+        }):
+            page = self.client.get("/attachment/first-pdf").get_data(as_text=True)
+        self.assertIn("اضغط زر التحميل لتحميل الملف من التلگرام بشكل مباشر.", page)
+        self.assertIn("اختر عدداً من النجوم لإرسال تقييمك.", page)
+        self.assertIn("التعليقات", page)
+        self.assertNotIn("التقييمات والتعليقات مشتركة بين صفحات المحتوى", page)
+        self.assertNotIn("دون الحاجة إلى كتابة اسم", page)
+        self.assertNotIn("تعليقات القراء", page)
+
     def test_old_multi_file_note_link_opens_independent_cards(self):
         response = self.client.get("/note/10")
         self.assertEqual(response.status_code, 302)
@@ -145,7 +170,7 @@ class IndependentNotesTests(unittest.TestCase):
             detail = page.split("ملفات مشابهة", 1)[0]
             self.assertIn(f"?start=file_10_{item['id']}", detail)
             self.assertNotIn("?start=btn_10", detail)
-            self.assertIn("لاستلام هذا الملف فقط", detail)
+            self.assertIn("اضغط زر التحميل لتحميل الملف من التلگرام بشكل مباشر", detail)
 
     def test_text_only_download_links_keep_the_legacy_button_payload(self):
         self.assertEqual(web._bot_download_url(10),

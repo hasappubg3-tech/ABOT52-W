@@ -13,4 +13,4 @@ Independent file pages must still respect the bot's existing shared-rating confi
 
 **Why:** The requested two-way synchronization has to work without editing the bot, whose feedback can be unified across files and linked menus.
 
-**How to apply:** Explain shared feedback on affected file pages. Do not split those ratings into independent website-only records unless the user changes the synchronization requirement.
+**How to apply:** Keep the underlying shared-feedback behavior intact, but do not show the shared-feedback notice in website UI unless the user asks for it again.

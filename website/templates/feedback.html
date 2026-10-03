@@ -17,10 +17,6 @@
     </div>
   </div>
 
-  {% if feedback.shared %}
-  <p class="feedback-shared" role="note">التقييمات والتعليقات مشتركة بين صفحات المحتوى التابعة للمجموعة نفسها على تيليغرام.</p>
-  {% endif %}
-
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
     <div class="feedback-flashes" aria-live="polite">
@@ -37,7 +33,7 @@
       {% if feedback.user_rating %}
       <p class="feedback-current">تقييمك الحالي: <strong>{{ feedback.user_rating }} من 5</strong></p>
       {% else %}
-      <p class="feedback-hint">اختر عدداً من النجوم لإرسال تقييمك دون الحاجة إلى كتابة اسم.</p>
+      <p class="feedback-hint">اختر عدداً من النجوم لإرسال تقييمك.</p>
       {% endif %}
       <form class="feedback-form feedback-rating-form" action="{{ feedback_url }}/rate" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -73,7 +69,7 @@
   </div>
 
   <div class="feedback-comments">
-    <h3 class="feedback-comments-title">تعليقات القراء <span>{{ feedback.comments|length }}</span></h3>
+    <h3 class="feedback-comments-title">التعليقات <span>{{ feedback.comments|length }}</span></h3>
     {% if feedback.comments %}
     <ol class="feedback-list">
       {% for comment in feedback.comments %}

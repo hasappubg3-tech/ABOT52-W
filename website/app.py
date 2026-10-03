@@ -923,7 +923,7 @@ def create_app() -> Flask:
             site_name=SITE_NAME,
             title=SITE_NAME,
             og_title=SITE_NAME,
-            og_description="مكتبة ملازم وكتب دراسية مجانية لجميع الصفوف",
+            og_description="كل ما يحتاجه الطالب",
             og_url="/",
             og_image="",
         )

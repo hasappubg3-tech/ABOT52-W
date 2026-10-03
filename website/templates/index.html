@@ -4,14 +4,14 @@
 <section class="hero">
   <div class="hero-inner">
     <h1 class="hero-title">شبكة الامير التعليمية</h1>
-    <p class="hero-sub">ملازم وكتب دراسية مجانية لجميع الصفوف</p>
+    <p class="hero-sub">كل ما يحتاجه الطالب</p>
   </div>
 </section>
 
 <section class="section">
   <div class="container">
     {% if categories %}
-      <h2 class="section-title">الصفوف الدراسية</h2>
+      <h2 class="section-title">اختار مرحلتك الدراسية...</h2>
       <div class="cat-grid">
         {% for cat in categories %}
         <a href="/cat/{{ cat.id }}" class="cat-card">
