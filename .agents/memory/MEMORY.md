@@ -3,3 +3,4 @@
 - [Telegram token log safety](telegram-token-log-safety.md) — HTTPX INFO logs can expose Telegram bot tokens embedded in API URLs; keep them suppressed before network requests.
 - [Website note independence](website-note-independence.md) — each PDF is its own website note; other files belong under similar suggestions, not grouped attachments; notify the user before bot edits.
 - [Website guest feedback](website-guest-feedback.md) — no login required; comments require a name, ratings do not; preserve Telegram's shared-feedback configuration.
+- [Website feedback verification](website-feedback-verification.md) — verify nonempty historical data through real projections and account for cross-site preview cookies.

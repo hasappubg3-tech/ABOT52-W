@@ -609,7 +609,7 @@ def _search_index_records() -> list:
             for doc in _col("buttons").find(
                 {"deleted": {"$ne": 1}, "hidden": {"$ne": 1}},
                 {"id": 1, "type": 1, "label": 1, "parent_id": 1,
-                 "created_at": 1, "click_count": 1},
+                 "created_at": 1, "click_count": 1, "unified_rating": 1},
             )
         }
         items_by_button = {}
@@ -851,7 +851,10 @@ def create_app() -> Flask:
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_SAMESITE="Lax",
+        # The preview is cross-site inside Replit's iframe. CHIPS keeps its
+        # signed guest session isolated and usable with third-party blocking.
+        SESSION_COOKIE_SAMESITE="None",
+        SESSION_COOKIE_PARTITIONED=True,
         PERMANENT_SESSION_LIFETIME=timedelta(days=365),
         MAX_CONTENT_LENGTH=32 * 1024,
     )
@@ -1027,11 +1030,22 @@ def create_app() -> Flask:
             message = feedback_store.submit(_col, button, item, action, request.form)
             flash(message, "success")
         except ValueError as error:
-            flash(str(error), "error")
+            # Rendering directly also shows failures if cookies were blocked.
+            app.logger.info("Website feedback rejected: %s", error)
+            return render_template(
+                "feedback_error.html", message=str(error), retry_url=destination,
+                site_name=SITE_NAME, bot_username=BOT_USERNAME,
+                title=f"لم تُحفظ المشاركة — {SITE_NAME}",
+            ), 400
         except PyMongoError:
             # Do not log connection strings or database exception details.
             app.logger.error("Website feedback database operation failed")
-            flash("تعذّر حفظ المشاركة حالياً. حاول مرة أخرى لاحقاً.", "error")
+            return render_template(
+                "feedback_error.html",
+                message="تعذّر حفظ المشاركة حالياً. حاول مرة أخرى لاحقاً.",
+                retry_url=destination, site_name=SITE_NAME,
+                bot_username=BOT_USERNAME, title=f"لم تُحفظ المشاركة — {SITE_NAME}",
+            ), 503
         return redirect(destination + "#feedback", code=303)
 
     @app.post("/feedback/attachment/<path:file_id>/<action>")

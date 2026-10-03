@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <section class="attachment-section" role="alert">
+    <h1 class="section-title">لم تُحفظ المشاركة</h1>
+    <p>{{ message }}</p>
+    <p>ارجع إلى صفحة الملزمة وحدّثها، ثم حاول مرة أخرى.</p>
+    <a class="btn btn--primary" href="{{ retry_url }}#feedback">العودة إلى التقييم والتعليقات</a>
+  </section>
+</div>
+{% endblock %}
