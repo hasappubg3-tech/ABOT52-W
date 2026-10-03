@@ -5,6 +5,17 @@ from unittest.mock import Mock, patch
 
 from website import app as web
 
+REAL_BUTTON_LOOKUP = web._btn
+REAL_CHILDREN_LOOKUP = web._children
+REAL_SEARCH_INDEX = web._search_index_records
+
+
+class SortedRows(list):
+    def sort(self, keys):
+        for key, direction in reversed(keys):
+            super().sort(key=lambda row: row.get(key, 0), reverse=direction < 0)
+        return self
+
 
 class IndependentNotesTests(unittest.TestCase):
     def setUp(self):
@@ -203,15 +214,30 @@ class IndependentNotesTests(unittest.TestCase):
                 "file_id": "group-child-note", "content": "ملزمة كيمياء"},
         }
         button_collection = Mock()
-        button_collection.find.return_value.sort.return_value = list(buttons.values())
+        button_collection.find.side_effect = lambda query, *args: SortedRows([
+            row for row in buttons.values()
+            if all(
+                (row.get(key) != condition["$ne"])
+                if isinstance(condition, dict) and "$ne" in condition
+                else row.get(key) == condition
+                for key, condition in query.items()
+            )
+        ])
         button_collection.find_one.side_effect = (
             lambda query, projection=None: buttons.get(query["id"])
         )
         item_collection = Mock()
-        item_collection.find.return_value.sort.return_value = list(docs.values())
+        item_collection.find.side_effect = lambda query, *args: SortedRows([
+            row for row in docs.values()
+            if all(row.get(key) == value for key, value in query.items()
+                   if not isinstance(value, dict))
+        ])
         database = {"buttons": button_collection, "content_items": item_collection}
 
         with patch.object(web, "_col", side_effect=lambda name: database[name]), \
+                patch.object(web, "_search_index_records", REAL_SEARCH_INDEX), \
+                patch.object(web, "_btn", REAL_BUTTON_LOOKUP), \
+                patch.object(web, "_children", REAL_CHILDREN_LOOKUP), \
                 patch.object(web, "_search_index_cache", {"expires": 0, "records": None}):
             visible = web._search_index_records()
             self.assertEqual([record["button"]["id"] for record in visible], [3])
@@ -220,12 +246,8 @@ class IndependentNotesTests(unittest.TestCase):
             self.assertIsNone(web._btn(4))
             self.assertEqual(web._btn(3)["id"], 3)
 
-            with patch.object(web, "_btn", side_effect=lambda bid: (
-                web._col("buttons").find_one({"id": bid})
-                if not any(web._is_bot_only_entry(b) and b["id"] == bid
-                           for b in buttons.values()) else None
-            )):
-                self.assertEqual(self.client.get("/cat/2").status_code, 404)
+            self.assertEqual(self.client.get("/cat/2").status_code, 404)
+            self.assertEqual(self.client.get("/note/2").status_code, 404)
 
 
 if __name__ == "__main__":
