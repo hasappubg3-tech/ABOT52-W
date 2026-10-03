@@ -4,3 +4,4 @@
 - [Website note independence](website-note-independence.md) — each PDF is its own website note; other files belong under similar suggestions, not grouped attachments; notify the user before bot edits.
 - [Website guest feedback](website-guest-feedback.md) — no login required; comments require a name, ratings do not; preserve Telegram's shared-feedback configuration.
 - [Website feedback verification](website-feedback-verification.md) — verify nonempty historical data through real projections and account for cross-site preview cookies.
+- [Railway public deployment](website-railway-domain.md) — public domain alameer-iq.com is hosted separately on Railway; workspace preview changes require a Railway deploy.
