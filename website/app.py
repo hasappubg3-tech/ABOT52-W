@@ -8,6 +8,7 @@ import time
 import logging
 import unicodedata
 import secrets
+from xml.etree import ElementTree as ET
 from datetime import timedelta
 from threading import Lock
 import requests as _req
@@ -18,7 +19,8 @@ from . import feedback as feedback_store
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Mdry7bot")
 SITE_NAME    = "شبكة الامير التعليمية"
-SITE_URL     = os.environ.get("SITE_URL", "").rstrip("/")
+# The public sitemap must not inherit HTTP or a preview/proxy hostname.
+SITE_URL     = "https://alameer-iq.com"
 
 # ── إزالة الإيموجيات ────────────────────────────────────────────────
 _EMOJI_RE = re.compile(
@@ -1188,7 +1190,7 @@ def create_app() -> Flask:
     # ── robots.txt ───────────────────────────────────────────────────
     @app.route("/robots.txt")
     def robots():
-        base = SITE_URL or request.host_url.rstrip("/")
+        base = SITE_URL
         content = (
             "User-agent: *\n"
             "Allow: /\n"
@@ -1202,44 +1204,47 @@ def create_app() -> Flask:
     # ── sitemap.xml ──────────────────────────────────────────────────
     @app.route("/sitemap.xml")
     def sitemap():
-        base = SITE_URL or request.host_url.rstrip("/")
-        urls = [{"loc": base, "priority": "1.0", "changefreq": "daily"}]
+        root = ET.Element("urlset", xmlns="http://www.sitemaps.org/schemas/sitemap/0.9")
+        seen = set()
 
-        # كل الفئات
-        cats = list(_col("buttons").find({
-            "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
-            "type": {"$ne": "content"}
-        }, {"id": 1, "updated_at": 1}))
-        for c in cats:
-            urls.append({
-                "loc": f"{base}/cat/{c['id']}",
-                "priority": "0.8",
-                "changefreq": "weekly",
-            })
+        def add_url(path, changefreq, priority):
+            location = SITE_URL + path
+            if location in seen:
+                return
+            seen.add(location)
+            node = ET.SubElement(root, "url")
+            ET.SubElement(node, "loc").text = location
+            ET.SubElement(node, "changefreq").text = changefreq
+            ET.SubElement(node, "priority").text = priority
 
-        # كل الملازم
-        notes = list(_col("buttons").find({
-            "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
-            "type": "content"
-        }, {"id": 1, "created_at": 1}))
-        for n in notes:
-            urls.append({
-                "loc": f"{base}/note/{n['id']}",
-                "priority": "0.9",
-                "changefreq": "monthly",
-            })
+        add_url(url_for("index"), "daily", "1.0")
 
-        lines = ['<?xml version="1.0" encoding="UTF-8"?>',
-                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-        for u in urls:
-            lines.append("  <url>")
-            lines.append(f"    <loc>{u['loc']}</loc>")
-            lines.append(f"    <changefreq>{u['changefreq']}</changefreq>")
-            lines.append(f"    <priority>{u['priority']}</priority>")
-            lines.append("  </url>")
-        lines.append("</urlset>")
+        buttons = {
+            button["id"]: button
+            for button in _col("buttons").find(
+                {"deleted": {"$ne": 1}, "hidden": {"$ne": 1}},
+                {"id": 1, "type": 1, "label": 1, "parent_id": 1},
+            )
+        }
+        for button in sorted(buttons.values(), key=lambda item: item["id"]):
+            if (button.get("type") != "content"
+                    and not _is_bot_only_entry(button)
+                    and _has_visible_ancestors(button, buttons)):
+                add_url(url_for("category", bid=button["id"]), "weekly", "0.8")
 
-        return Response("\n".join(lines), mimetype="application/xml")
+        # Publish the independent file pages, not their legacy redirect links.
+        for record in _search_index_records():
+            files = _file_items(record["items"])
+            if files:
+                for _, item in files:
+                    add_url(url_for("attachment_detail", file_id=item["file_id"]),
+                            "monthly", "0.9")
+            else:
+                add_url(url_for("note", bid=record["button"]["id"]), "monthly", "0.9")
+
+        ET.indent(root, space="  ")
+        xml = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        return Response(xml, content_type="application/xml; charset=utf-8")
 
     # ── صفحة 404 ─────────────────────────────────────────────────────
     @app.errorhandler(404)
