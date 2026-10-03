@@ -1,3 +1,4 @@
+from .download_targets import encode_delivery_target
 from .shared import *
 import random as _random
 import time as _time
@@ -350,7 +351,8 @@ def get_file_block_remaining(uid) -> int:
     remaining = until - int(_time.time())
     return remaining if remaining > 0 else 0
 
-async def send_notif_gate(target, uid, bid):
+async def send_notif_gate(target, uid, bid, item_id=None):
+    delivery_target = encode_delivery_target(bid, item_id)
     msg         = get_setting("notif_message", "🔔 يرجى الاشتراك في قناتنا!")
     chan        = get_setting("notif_channel", "").strip()
     ok_text     = get_setting("notif_ok_text",    "✅ نعم، اشتركت")
@@ -360,8 +362,8 @@ async def send_notif_gate(target, uid, bid):
         url = chan if chan.startswith("http") else f"https://t.me/{chan.lstrip('@')}"
         rows.append([InlineKeyboardButton("📢 انضم للقناة الآن", url=url)])
     rows.append([
-        InlineKeyboardButton(ok_text,     callback_data=f"notif_ok_{bid}"),
-        InlineKeyboardButton(cancel_text, callback_data=f"notif_skip_{bid}"),
+        InlineKeyboardButton(ok_text,     callback_data=f"notif_ok_{delivery_target}"),
+        InlineKeyboardButton(cancel_text, callback_data=f"notif_skip_{delivery_target}"),
     ])
     markup = InlineKeyboardMarkup(rows)
     try:

@@ -1,3 +1,4 @@
+from .download_targets import parse_delivery_target
 from .shared import *
 
 # ── حاسبة القبول الوزاري ─────────────────────────────────────────
@@ -203,6 +204,17 @@ async def cmd_start(update: Update, ctx):
     if ctx.args and ctx.args[0].startswith("ch_"):
         challenge_id = ctx.args[0][3:]
         await handle_challenge_invite(update, ctx, challenge_id)
+        return
+    # رابط ملف مستقل من الموقع؛ لا نرجع إلى جميع ملفات الزر إذا حُذف الملف.
+    if ctx.args and ctx.args[0].startswith("file_"):
+        selected = parse_delivery_target(ctx.args[0][5:])
+        if selected and selected[1] is not None:
+            bid, item_id = selected
+            b = get_btn(bid)
+            if b and b.get("type") == "content" and not b.get("hidden"):
+                await send_items(update.message, bid, uid=uid, bot=ctx.bot, item_id=item_id)
+                return
+        await update.message.reply_text("هذا الملف غير متاح حالياً. يرجى الرجوع إلى الموقع واختيار ملف آخر.")
         return
     # معالجة رابط الملزمة من الموقع /start btn_<bid>
     if ctx.args and ctx.args[0].startswith("btn_"):

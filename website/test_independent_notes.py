@@ -100,7 +100,8 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         detail, similar = page.split("ملفات مشابهة", 1)
-        self.assertIn(web._bot_download_url(10), detail)
+        self.assertIn(web._bot_download_url(10, 1), detail)
+        self.assertNotIn(web._bot_download_url(10), detail)
         self.assertNotIn('src="/file/', detail)
         self.assertNotIn("second-pdf", detail)
         self.assertIn('href="/attachment/second-pdf"', similar)
@@ -131,18 +132,30 @@ class IndependentNotesTests(unittest.TestCase):
         page = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("تحميل من التلكرام", page)
-        self.assertIn(web._bot_download_url(10), page)
+        self.assertIn(web._bot_download_url(10, 1), page)
         self.assertNotIn("معاينة الملف غير متاحة", page)
         self.assertNotIn("فتح رسالة الملف", page)
         web._file_url.assert_not_called()
         self.assertIn('href="/attachment/second-pdf"', page)
         self.assertNotIn('<iframe class="pdf-embed"', page)
 
+    def test_each_file_in_one_button_has_its_own_telegram_download_target(self):
+        for item in self.files:
+            page = self.client.get(f"/attachment/{item['file_id']}").get_data(as_text=True)
+            detail = page.split("ملفات مشابهة", 1)[0]
+            self.assertIn(f"?start=file_10_{item['id']}", detail)
+            self.assertNotIn("?start=btn_10", detail)
+            self.assertIn("لاستلام هذا الملف فقط", detail)
+
+    def test_text_only_download_links_keep_the_legacy_button_payload(self):
+        self.assertEqual(web._bot_download_url(10),
+                         f"https://t.me/{web.BOT_USERNAME}?start=btn_10")
+
     def test_old_direct_document_links_redirect_only_to_the_bot(self):
-        for file_id in ("first-pdf", "second-pdf"):
+        for item_id, file_id in enumerate(("first-pdf", "second-pdf"), start=1):
             response = self.client.get(f"/file/{file_id}")
             self.assertEqual(response.status_code, 302)
-            self.assertEqual(response.location, web._bot_download_url(10))
+            self.assertEqual(response.location, web._bot_download_url(10, item_id))
         web._file_url.assert_not_called()
 
     def test_unknown_direct_file_links_are_not_proxied(self):

@@ -15,6 +15,7 @@ import requests as _req
 from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash
 from pymongo.errors import PyMongoError
 from . import feedback as feedback_store
+from bot.download_targets import encode_delivery_target
 
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Mdry7bot")
@@ -504,9 +505,13 @@ def _find_visible_attachment(file_id: str) -> dict | None:
     return None
 
 
-def _bot_download_url(bid: int) -> str:
-    """رابط يدعمه البوت حالياً؛ تحميل الملازم يتم من خلاله حصراً."""
-    return f"https://t.me/{BOT_USERNAME}?start=btn_{bid}"
+def _bot_download_url(bid: int, item_id: int | None = None) -> str:
+    """الملف المستقل يرسل معرّف العنصر، لا رابط الزر الذي يجمع ملفات متعددة."""
+    if item_id is not None:
+        payload = f"file_{encode_delivery_target(bid, item_id)}"
+    else:
+        payload = f"btn_{bid}"
+    return f"https://t.me/{BOT_USERNAME}?start={payload}"
 
 
 _SIMILAR_TITLE_STOPWORDS = {
@@ -1046,7 +1051,7 @@ def create_app() -> Flask:
             display_label=display_label,
             subtitle=subtitle,
             similar=similar,
-            bot_deep_link=_bot_download_url(selected["button"]["id"]),
+            bot_deep_link=_bot_download_url(selected["button"]["id"], item["id"]),
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",
@@ -1149,7 +1154,7 @@ def create_app() -> Flask:
     def file_proxy(file_id: str):
         selected = _find_visible_attachment(file_id)
         if selected:
-            return redirect(_bot_download_url(selected["button"]["id"]))
+            return redirect(_bot_download_url(selected["button"]["id"], selected["item"]["id"]))
 
         visible_photo = any(
             item.get("type") == "photo" and item.get("file_id") == file_id

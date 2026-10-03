@@ -15,6 +15,12 @@ The user's download rule: «كل الملازم قابلة للتحميل من �
 
 **How to apply:** Every note must offer its bot deep link regardless of website preview availability. Do not offer direct document downloads, PDF embeds, or links to storage-channel messages on the website. Keep related notes as separate recommendations.
 
+Website-initiated Telegram downloads must deliver only the file selected on the website, even if its bot button contains multiple files.
+
+**Why:** The user reported that clicking one website note sent all notes in its bot button and explicitly requested only the chosen note.
+
+**How to apply:** Preserve the selected-file identity through subscription prompts and delayed delivery. Keep ordinary bot button navigation and legacy full-button links unchanged; never fall back to the whole button when a selected file is missing.
+
 The user's instruction: «لا تعدل شيء بالبوت دون علمي».
 
 **Why:** The user asked to keep the bot unchanged while correcting the website.

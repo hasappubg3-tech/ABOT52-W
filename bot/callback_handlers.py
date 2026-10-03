@@ -1,3 +1,4 @@
+from .download_targets import parse_delivery_target
 from .shared import *
 
 async def cb_manage(update: Update, ctx):
@@ -234,6 +235,11 @@ async def cb_manage(update: Update, ctx):
                         parse_mode="Markdown"
                     )
                 except Exception: pass
+            # روابط الموقع تستلم ملفها المحدد بعد التأكيد، دون تغيير الروابط القديمة.
+            delivery_target = d[len("notif_ok_"):]
+            selected = parse_delivery_target(delivery_target)
+            if selected and selected[1] is not None:
+                await deliver_denied_content(ctx.bot, q.message.chat_id, delivery_target)
             return
 
         # ─ زر "لا لاحقاً" ──────────────────────────────────────────

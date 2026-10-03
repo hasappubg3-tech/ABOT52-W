@@ -1,4 +1,5 @@
 from .shared import *
+from .download_targets import encode_delivery_target, parse_delivery_target
 import html as _html
 import re as _re
 from telegram import InputMediaPhoto, InputMediaVideo, InputMediaDocument
@@ -336,7 +337,8 @@ async def do_broadcast(bot, from_chat_id: int, msg_id: int) -> tuple:
     return success, failed
 
 # ── إعادة إرسال نافذة التنبيه المعلقة (دون تحديث العداد) ─────────
-async def resend_notif_gate(target, uid, bid):
+async def resend_notif_gate(target, uid, bid, item_id=None):
+    delivery_target = encode_delivery_target(bid, item_id)
     msg         = get_setting("notif_message", "🔔 يرجى الاشتراك في قناتنا!")
     chan        = get_setting("notif_channel", "").strip()
     ok_text     = get_setting("notif_ok_text",    "✅ نعم، اشتركت")
@@ -355,8 +357,8 @@ async def resend_notif_gate(target, uid, bid):
         url = chan if chan.startswith("http") else f"https://t.me/{chan.lstrip('@')}"
         rows.append([InlineKeyboardButton("📢 انضم للقناة الآن", url=url)])
     rows.append([
-        InlineKeyboardButton(ok_text,     callback_data=f"notif_ok_{bid}"),
-        InlineKeyboardButton(cancel_text, callback_data=f"notif_skip_{bid}"),
+        InlineKeyboardButton(ok_text,     callback_data=f"notif_ok_{delivery_target}"),
+        InlineKeyboardButton(cancel_text, callback_data=f"notif_skip_{delivery_target}"),
     ])
     markup = InlineKeyboardMarkup(rows)
     try:
@@ -368,15 +370,33 @@ async def resend_notif_gate(target, uid, bid):
     except Exception:
         pass
 
+def _select_download_items(items, item_id):
+    if item_id is None:
+        return items
+    for item in items:
+        if (item.get("id") == item_id and item.get("type") in {"file", "document"}
+                and item.get("file_id")):
+            # Telegram documents use the bot's existing file sender.
+            return [{**item, "type": "file"}]
+    return []
+
+
 async def deliver_denied_content(bot, chat_id, bid_str):
     """يرسل المحتوى المطلوب مباشرة بعد الرفض النهائي — يتجاوز فحص الاشتراك."""
-    if not bid_str or not str(bid_str).isdigit():
+    selected = parse_delivery_target(bid_str)
+    if not selected:
         return
-    bid_int = int(bid_str)
-    items = get_items_user(bid_int)
+    bid_int, item_id = selected
+    b = get_btn(bid_int)
+    if item_id is not None and (
+            not b or b.get("type") != "content" or b.get("hidden")):
+        await bot.send_message(chat_id=chat_id, text="هذا الملف غير متاح حالياً.")
+        return
+    items = _select_download_items(get_items_user(bid_int), item_id)
     if not items:
+        if item_id is not None:
+            await bot.send_message(chat_id=chat_id, text="هذا الملف غير متاح حالياً.")
         return
-    b       = get_btn(bid_int)
     no_cap  = (b.get("no_caption", 0) or 0) if b else 0
     extra   = get_global_caption() if not no_cap else ""
     no_btn  = (b.get("no_btn_caption", 0) or 0) if b else 0
@@ -408,7 +428,7 @@ async def deliver_denied_content(bot, chat_id, bid_str):
             logging.warning(f"deliver_denied_content: {e}")
 
 # ── عرض عناصر المحتوى للمستخدم ───────────────────────────────────
-async def send_items(m, bid, uid=None, bot=None):
+async def send_items(m, bid, uid=None, bot=None, item_id=None):
     if uid and not is_admin(uid):
         # حظر مؤقت بعد التمادي في رفض الاشتراك
         remaining = get_file_block_remaining(uid)
@@ -446,7 +466,7 @@ async def send_items(m, bid, uid=None, bot=None):
         if pending_bid:
             if pending_bid != bid:
                 set_pending_notif(uid, bid)
-            await resend_notif_gate(m, uid, bid)
+            await resend_notif_gate(m, uid, bid, item_id=item_id)
             return
 
         # فحص الاشتراك في القناة (مرة واحدة فقط)
@@ -457,12 +477,13 @@ async def send_items(m, bid, uid=None, bot=None):
         if subscribed is False:
             inc_user_opens(uid)
             if should_notify(uid):
-                await send_notif_gate(m, uid, bid)
+                await send_notif_gate(m, uid, bid, item_id=item_id)
                 return  # حجب المحتوى عند ظهور التنبيه المنبثق
 
     items = get_items_user(bid) if (uid and not is_admin(uid)) else get_items(bid)
+    items = _select_download_items(items, item_id)
     if not items:
-        await m.reply_text("📭 لا يوجد محتوى بعد.")
+        await m.reply_text("هذا الملف غير متاح حالياً." if item_id is not None else "📭 لا يوجد محتوى بعد.")
         return
     if uid and not is_admin(uid):
         inc_click_count(bid, uid)
