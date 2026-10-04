@@ -83,8 +83,17 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertIn("اختار مرحلتك الدراسية...", page)
         self.assertIn("جميع الملازم والكتب متاحة مجاناً عبر التلگرام", page)
         self.assertIn("افتح البوت على التلگرام", page)
+        self.assertIn('href="/static/img/site-icon.png"', page)
         self.assertNotIn("ملازم وكتب دراسية مجانية لجميع الصفوف", page)
         self.assertNotIn("الصفوف الدراسية", page)
+
+    def test_site_icon_is_a_small_png_from_the_header_logo(self):
+        response = self.client.get("/static/img/site-icon.png")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertTrue(response.data.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertLess(len(response.data), 20_000)
+        response.close()
 
     def test_attachment_and_feedback_use_requested_copy(self):
         with patch.object(web, "_feedback_context", return_value={
