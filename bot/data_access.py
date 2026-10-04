@@ -392,11 +392,16 @@ def clone_btn(source_bid, pid, add_after="END", add_before=None, new_row=1):
     t = src["type"]
 
     if add_before is not None:
-        new_bid = add_btn_before(add_before, pid, t, label)
+        new_bid = add_btn_before(
+            add_before, pid, t, label, label_emojis=src.get("label_emojis")
+        )
     elif add_after != "END":
-        new_bid = add_btn_after(add_after, pid, t, label, new_row=new_row)
+        new_bid = add_btn_after(
+            add_after, pid, t, label, label_emojis=src.get("label_emojis"),
+            new_row=new_row,
+        )
     else:
-        new_bid = add_btn(pid, t, label)
+        new_bid = add_btn(pid, t, label, label_emojis=src.get("label_emojis"))
 
     updates = {}
     for field in ["special_action", "compound_text", "random_quiz", "random_exam",
@@ -454,7 +459,7 @@ def clone_btn(source_bid, pid, add_after="END", add_before=None, new_row=1):
         internal = list(_col("buttons").find(child_filter).sort([("ord", 1), ("id", 1)]))
         for child in internal:
             child_new_id = _next_id("buttons")
-            _col("buttons").insert_one({
+            child_doc = {
                 "id": child_new_id, "parent_id": new_bid,
                 "type": child.get("type", "content"), "label": child.get("label", ""),
                 "ord": child.get("ord", 1), "new_row": child.get("new_row", 1),
@@ -462,7 +467,10 @@ def clone_btn(source_bid, pid, add_after="END", add_before=None, new_row=1):
                 "no_caption": child.get("no_caption", 0), "no_btn_caption": child.get("no_btn_caption", 0),
                 "hidden": 0, "special_action": None, "compound_text": None,
                 "random_quiz": 0, "random_exam": 0, "deleted": 0,
-            })
+            }
+            if "label_emojis" in child:
+                child_doc["label_emojis"] = child["label_emojis"]
+            _col("buttons").insert_one(child_doc)
             child_items = list(_col("content_items").find({"button_id": child["id"]}).sort([("ord", 1)]))
             for item in child_items:
                 n_id = _next_id("content_items")
