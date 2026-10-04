@@ -15,6 +15,7 @@ import requests as _req
 from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash
 from pymongo.errors import PyMongoError
 from . import feedback as feedback_store
+from . import search as search_engine
 from bot.download_targets import encode_delivery_target
 
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -624,10 +625,6 @@ def _search_item_text(item: dict) -> str:
     return " ".join(str(item.get(field) or "") for field in fields)
 
 
-def _search_matches_normalized(normalized_text: str, tokens: list) -> bool:
-    return all(token in normalized_text for token in tokens)
-
-
 def _search_index_records() -> list:
     """يحمّل فهرس البحث مرة واحدة ويحدّثه دورياً لتبقى الطلبات الحية سريعة."""
     global _search_index_cache
@@ -689,6 +686,14 @@ def _search_index_records() -> list:
                 "normalized_item_texts": normalized_item_texts,
                 "aggregate_normalized": aggregate_normalized,
             })
+            context = []
+            parent_id = btn.get("parent_id")
+            while parent_id is not None:
+                parent = visible_buttons[parent_id]
+                context.append(str(parent.get("label") or ""))
+                parent_id = parent.get("parent_id")
+            records[-1]["search_context"] = " ".join(context)
+            records[-1]["search_documents"] = _record_search_documents(records[-1])
 
         _search_index_cache = {
             "expires": time.monotonic() + _SEARCH_INDEX_TTL,
@@ -723,97 +728,74 @@ def _search_note_display_name(btn: dict, items: list) -> str:
     return _note_display_name(btn, items)
 
 
-def _search_content(q: str, limit: int = 50) -> list:
-    tokens = _search_tokens(q)
-    if not tokens:
-        return []
-
-    results = []
-    seen_files = set()
-    seen_notes = set()
-    normalized_query = " ".join(tokens)
-
-    for record in _search_index_records():
-        btn = record["button"]
-        bid = btn["id"]
-        items = record["items"]
-        label = record["label"]
-        normalized_label = record["normalized_label"]
-        if not _search_matches_normalized(record["aggregate_normalized"], tokens):
-            continue
-
-        label_match = _search_matches_normalized(normalized_label, tokens)
-        exact_label_match = normalized_query in normalized_label
-        file_items = [
-            (file_index, item, record["normalized_item_texts"][item_index])
-            for file_index, (item_index, item) in enumerate(
-                (
-                    (item_index, item)
-                    for item_index, item in enumerate(items)
-                    if item.get("type") in {"document", "file"} and item.get("file_id")
-                ),
-                start=1,
-            )
-        ]
-        matching_files = [
-            (index, item, item_normalized)
-            for index, item, item_normalized in file_items
-            if _search_matches_normalized(
-                f"{normalized_label} {item_normalized}",
-                tokens,
-            )
-        ]
-        selected_files = file_items if label_match else matching_files
-
-        if selected_files:
-            for index, item, _item_normalized in selected_files:
-                file_id = item["file_id"]
-                if file_id in seen_files:
-                    continue
-                seen_files.add(file_id)
-                display_label = _attachment_display_title(item, index, label)
-                years = _year_candidates(display_label)
-                results.append({
-                    "id": bid,
-                    "url": f"/attachment/{file_id}",
+def _record_search_documents(record: dict) -> list:
+    """Keep captions file-specific; shared text and ancestor labels add context."""
+    btn, items, label = record["button"], record["items"], record["label"]
+    common_text = " ".join(
+        _search_item_text(item) for item in items
+        if item.get("type") not in {"document", "file"}
+    )
+    context = record.get("search_context", "")
+    documents = []
+    files = _file_items(items)
+    if files:
+        for index, item in files:
+            display_label = _attachment_display_title(item, index, label)
+            # An old file must not inherit the year of its newer siblings.
+            file_label = re.sub(_YEAR_RE, "", label.translate(_DIGIT_TRANSLATION))
+            text = f"{file_label} {context} {common_text} {_search_item_text(item)} {display_label}"
+            documents.append({
+                "search": search_engine.prepare(text, display_label),
+                "year": max((int(y) for y in _year_candidates(display_label)), default=0),
+                "result": {
+                    "id": btn["id"],
+                    "url": f"/attachment/{item['file_id']}",
                     "display_label": display_label,
                     "subtitle": _attachment_search_subtitle(item, label),
                     "thumb_url": False,
                     "is_new": False,
                     "click_count": 0,
                     "is_attachment": True,
-                    "_rank": 0 if exact_label_match else (1 if label_match else 2),
-                    "_year": max((int(year) for year in years), default=0),
-                })
-            continue
-
-        if bid not in seen_notes:
-            note = {
+                },
+            })
+    else:
+        title = _search_note_display_name(btn, items)
+        text = f"{label} {context} {' '.join(_search_item_text(item) for item in items)}"
+        documents.append({
+            "search": search_engine.prepare(text, title),
+            "year": max((int(y) for y in _year_candidates(text)), default=0),
+            "result": {
                 **btn,
                 "rating": {"count": 0, "avg": 0.0, "stars": ""},
                 "is_new": _is_new(btn),
                 "thumb_url": False,
                 "click_count": btn.get("click_count", 0),
-                "display_label": _search_note_display_name(btn, items),
-                "url": f"/note/{bid}",
+                "display_label": title,
+                "url": f"/note/{btn['id']}",
                 "subtitle": "",
                 "is_attachment": False,
-                "_rank": 0 if exact_label_match else (1 if label_match else 2),
-                    "_year": max(
-                    (int(year) for year in _year_candidates(
-                        " ".join([label] + [_search_item_text(item) for item in items])
-                    )),
-                    default=0,
-                ),
-            }
-            results.append(note)
-            seen_notes.add(bid)
+            },
+        })
+    return documents
 
-    results.sort(key=lambda result: (result["_rank"], -result["_year"]))
-    for result in results:
-        result.pop("_rank", None)
-        result.pop("_year", None)
-    return results[:max(1, limit)]
+
+def _search_content(q: str, limit: int = 50) -> list:
+    documents = []
+    for record in _search_index_records():
+        documents.extend(
+            record["search_documents"] if "search_documents" in record
+            else _record_search_documents(record)
+        )
+    results, seen = [], set()
+    for _score, document in search_engine.rank(documents, q):
+        result = document["result"]
+        if result["url"] in seen:
+            continue
+        seen.add(result["url"])
+        results.append(dict(result))
+        if len(results) >= max(1, limit):
+            break
+    return results
 
 
 def _latest_notes(limit: int = 8) -> list:
