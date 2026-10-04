@@ -16,6 +16,7 @@ from flask import Flask, render_template, jsonify, request, redirect, abort, url
 from pymongo.errors import PyMongoError
 from . import feedback as feedback_store
 from . import search as search_engine
+from . import seo
 from bot.download_targets import encode_delivery_target
 
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -248,6 +249,20 @@ def _breadcrumb(bid: int) -> list:
         current = doc.get("parent_id")
     path.reverse()
     return path
+
+
+def _seo_labels(breadcrumb):
+    return [strip_emoji(crumb.get("label", "")) for crumb in breadcrumb]
+
+
+def _seo_breadcrumb(breadcrumb, current_path):
+    entries = [("الرئيسية", "/")]
+    for index, crumb in enumerate(breadcrumb):
+        path = current_path if index == len(breadcrumb) - 1 else url_for(
+            "category", bid=crumb["id"]
+        )
+        entries.append((strip_emoji(crumb.get("label", "")), path))
+    return seo.breadcrumb_schema(entries, SITE_URL)
 
 
 def _is_new(btn: dict) -> bool:
@@ -936,9 +951,17 @@ def create_app() -> Flask:
             site_name=SITE_NAME,
             title=SITE_NAME,
             og_title=SITE_NAME,
-            og_description="كل ما يحتاجه الطالب",
+            og_description="مكتبة شبكة الامير التعليمية للملازم والكتب والملخصات الدراسية، مرتبة حسب المرحلة والمادة، مع تحميل الملفات مجاناً عبر بوت التلگرام.",
             og_url="/",
             og_image="",
+            canonical_url=SITE_URL + url_for("index"),
+            structured_data={
+                "@context": "https://schema.org",
+                "@type": "WebSite",
+                "name": SITE_NAME,
+                "url": SITE_URL + "/",
+                "inLanguage": "ar",
+            },
         )
 
     # ── صفحة فئة / قسم ───────────────────────────────────────────────
@@ -971,6 +994,10 @@ def create_app() -> Flask:
                     seen_files.add(file_id)
                 contents.append(card)
         breadcrumb = _breadcrumb(bid)
+        seo_title, seo_description = seo.category_metadata(
+            _seo_labels(breadcrumb), SITE_NAME
+        )
+        canonical_path = url_for("category", bid=bid)
         return render_template("category.html",
             btn=btn,
             menus=menus,
@@ -978,11 +1005,14 @@ def create_app() -> Flask:
             breadcrumb=breadcrumb,
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
-            title=f"{strip_emoji(btn.get('label',''))} — {SITE_NAME}",
-            og_title=f"{strip_emoji(btn.get('label',''))} — {SITE_NAME}",
-            og_description=f"تصفح ملازم وكتب {strip_emoji(btn.get('label',''))}",
+            title=seo_title,
+            og_title=seo_title,
+            og_description=seo_description,
             og_url=f"/cat/{bid}",
             og_image="",
+            canonical_url=SITE_URL + canonical_path,
+            structured_data=_seo_breadcrumb(breadcrumb, canonical_path)
+                if len(breadcrumb) > 1 else None,
         )
 
     # ── صفحة الملزمة ─────────────────────────────────────────────────
@@ -1017,6 +1047,7 @@ def create_app() -> Flask:
         # رابط deep-link للبوت لفتح الملزمة مباشرة
         bot_deep_link = _bot_download_url(bid)
         feedback = _feedback_context(btn)
+        canonical_path = url_for("note", bid=bid)
 
         return render_template("note.html",
             btn=btn,
@@ -1035,9 +1066,14 @@ def create_app() -> Flask:
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",
             og_title=f"{display_label} — {SITE_NAME}",
-            og_description=preview_text[:160] if preview_text else f"ملزمة {display_label}",
+            og_description=seo.material_description(
+                display_label, _seo_labels(breadcrumb[:-1]), SITE_NAME,
+                summary=strip_emoji(preview_text),
+            ),
             og_url=f"/note/{bid}",
             og_image="",
+            canonical_url=SITE_URL + canonical_path,
+            structured_data=_seo_breadcrumb(breadcrumb, canonical_path),
         )
 
     # ── صفحة ملف مستقل مع اقتراحات مشابهة ────────────────────────────
@@ -1055,6 +1091,8 @@ def create_app() -> Flask:
         subtitle = _attachment_search_subtitle(item, record["label"])
         similar = _similar_attachments(selected)
         feedback = _feedback_context(selected["button"], item)
+        breadcrumb = _breadcrumb(selected["button"]["id"])
+        canonical_path = url_for("attachment_detail", file_id=file_id)
 
         return render_template(
             "attachment.html",
@@ -1069,9 +1107,16 @@ def create_app() -> Flask:
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",
             og_title=f"{display_label} — {SITE_NAME}",
-            og_description=subtitle or display_label,
+            og_description=seo.material_description(
+                display_label, _seo_labels(breadcrumb[:-1]), SITE_NAME
+            ),
             og_url=f"/attachment/{file_id}",
             og_image="",
+            canonical_url=SITE_URL + canonical_path,
+            structured_data=seo.breadcrumb_schema(
+                [("الرئيسية", "/"), (strip_emoji(display_label), canonical_path)],
+                SITE_URL,
+            ),
         )
 
     def save_feedback(button, item, action, destination):
@@ -1135,6 +1180,7 @@ def create_app() -> Flask:
             og_description=f"نتائج البحث عن '{q}'" if q else "ابحث في مكتبة الامير",
             og_url=f"/search?q={q}",
             og_image="",
+            meta_robots="noindex,follow",
         )
 
     # ── API بحث (JSON لـ live search) ────────────────────────────────
@@ -1275,6 +1321,7 @@ def create_app() -> Flask:
             og_description="الصفحة غير موجودة",
             og_url="/",
             og_image="",
+            meta_robots="noindex,follow",
         ), 404
 
     return app

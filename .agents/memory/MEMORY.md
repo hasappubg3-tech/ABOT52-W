@@ -6,3 +6,4 @@
 - [Website feedback verification](website-feedback-verification.md) — verify nonempty historical data through real projections and account for cross-site preview cookies.
 - [Railway public deployment](website-railway-domain.md) — public domain alameer-iq.com is hosted separately on Railway; workspace preview changes require a Railway deploy.
 - [Forgiving Arabic search](website-forgiving-search.md) — students should find materials despite spelling variants, minor typos, and extra words; exact teacher matches remain most relevant.
+- [Website search visibility](website-search-visibility.md) — generate metadata automatically from real materials; keep SEO descriptions out of the visible page.

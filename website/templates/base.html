@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="{% block meta_description %}{{ og_description | default('شبكة الامير التعليمية — مكتبة الملازم والكتب الدراسية') }}{% endblock %}">
+  {% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}">{% endif %}
+  {% if meta_robots %}<meta name="robots" content="{{ meta_robots }}">{% endif %}
 
   <!-- Open Graph / Facebook -->
   <meta property="og:type"        content="website">
   <meta property="og:site_name"   content="{{ site_name | default('شبكة الامير التعليمية') }}">
   <meta property="og:title"       content="{{ og_title | default('شبكة الامير التعليمية') }}">
   <meta property="og:description" content="{{ og_description | default('مكتبة ملازم وكتب دراسية مجانية') }}">
+  {% if canonical_url %}<meta property="og:url" content="{{ canonical_url }}">{% endif %}
   {% if og_image %}<meta property="og:image" content="{{ og_image }}">{% endif %}
 
   <!-- Twitter Card -->
@@ -19,6 +22,9 @@
   {% if og_image %}<meta name="twitter:image" content="{{ og_image }}">{% endif %}
 
   <title>{{ title | default(og_title) | default('شبكة الامير التعليمية') }}</title>
+  {% if structured_data %}
+  <script type="application/ld+json">{{ structured_data | tojson }}</script>
+  {% endif %}
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
