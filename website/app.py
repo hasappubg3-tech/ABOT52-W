@@ -405,6 +405,54 @@ def _append_year(title: str, year: str) -> str:
     return title
 
 
+_PART_TITLE_RE = re.compile(
+    r"\s+((?:ال)?(?:جزء|فصل|باب|وحدة|درس|محاضرة|مبحث)\b.*)$",
+    flags=re.IGNORECASE,
+)
+_TEACHER_MARKER_RE = r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)"
+
+
+def _teacher_name(text: str) -> str:
+    """يقتصر اسم المدرس على الاسم، من دون السنة أو رقم الجزء الذي يليه."""
+    teacher = re.sub(r"\s+", " ", str(text or "")).strip(" |:،؛.-")
+    teacher = re.split(
+        r"\s+(?=(?:20[0-9٠-٩۰-۹]{2}\b|(?:ال)?(?:جزء|فصل|باب|وحدة|درس|محاضرة|مبحث)\b))",
+        teacher,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip(" |:،؛.-")
+    return teacher
+
+
+def _title_with_teacher(title: str, teacher: str, year: str) -> str:
+    """يضع المدرس في العنوان ثم السنة ثم تسمية الجزء أو الفصل."""
+    title = str(title or "")
+    teacher = _teacher_name(teacher)
+    if not teacher:
+        return _append_year(title, year)
+
+    title = re.sub(
+        rf"{_TEACHER_MARKER_RE}\s*[:：]?\s*{re.escape(teacher)}",
+        " ",
+        title,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if year:
+        title = re.sub(
+            r"(?<!\d)[0-9٠-٩۰-۹]{4}(?!\d)",
+            lambda match: " " if match.group(0).translate(_DIGIT_TRANSLATION) == year
+            else match.group(0),
+            title,
+        )
+    title = re.sub(r"\s+", " ", title).strip(" |:،؛.-()")
+    part_match = _PART_TITLE_RE.search(title)
+    part = part_match.group(1).strip(" |:،؛.-()") if part_match else ""
+    subject = title[:part_match.start()].strip(" |:،؛.-()") if part_match else title
+    pieces = [subject, f"للأستاذ {teacher}", str(year or ""), part]
+    return " ".join(piece for piece in pieces if piece).strip() or title
+
+
 def _note_display_name(btn: dict, items: list | None = None) -> str:
     """يبني اسم الملزمة من وصفها، ويضمّن سنة الإصدار في العنوان."""
     if items is None:
@@ -412,7 +460,7 @@ def _note_display_name(btn: dict, items: list | None = None) -> str:
     info = _parse_content_lines(btn["id"], items)
 
     title   = info.get("title", "")
-    teacher = info.get("teacher", "")
+    teacher = info.get("teacher", "") or _teacher_from_lines([btn.get("label", "")])
     year    = _release_year(
         _content_metadata_lines(items),
         btn.get("label", ""),
@@ -422,13 +470,7 @@ def _note_display_name(btn: dict, items: list | None = None) -> str:
     if not title:
         title = strip_emoji(btn.get("label", ""))
 
-    parts = [title]
-    if teacher:
-        parts.append(f"للاستاذ {teacher}")
-    display_name = " ".join(parts)
-    display_name = _append_year(display_name, year)
-
-    return display_name
+    return _title_with_teacher(title, teacher, year)
 
 
 def _attachment_title(item: dict, index: int) -> str:
@@ -460,7 +502,10 @@ def _attachment_display_title(item: dict, index: int, group_label: str = "") -> 
         title = strip_emoji(group_label) or title
     # سنة الملف نفسه لها الأولوية؛ سنة زر البوت ليست سنة كل ملف تحته.
     year = _release_year(_content_metadata_lines([item])) or _release_year([], group_label)
-    return _append_year(title, year)
+    teacher = _teacher_from_lines(_content_metadata_lines([item]))
+    if not teacher:
+        teacher = _teacher_from_lines([group_label])
+    return _title_with_teacher(title, teacher, year)
 
 
 def _independent_notes(btn: dict, items: list | None = None) -> list:
@@ -703,24 +748,10 @@ def _search_index_records() -> list:
 
 
 def _attachment_search_subtitle(item: dict, group_label: str) -> str:
-    raw = _search_item_text(item)
     clean_group = str(strip_emoji(group_label)).translate(_DIGIT_TRANSLATION)
     clean_group = re.sub(_YEAR_RE, "", clean_group)
-    clean_group = re.sub(r"\s+", " ", clean_group).strip()
-    parts = [clean_group] if clean_group else []
-    teacher = ""
-    for line in str(raw).splitlines():
-        clean_line = strip_emoji(line)
-        match = re.search(r"(?:للاستاذ|للأستاذ|الأستاذ|الاستاذ)\s*[:：]?\s*(.+)", clean_line)
-        if match:
-            teacher = match.group(1).translate(_DIGIT_TRANSLATION)
-            teacher = re.sub(_YEAR_RE, "", teacher)
-            teacher = re.sub(r"\s+", " ", teacher).strip(" |:،")
-            if teacher:
-                if _normalize_search_text(teacher) not in _normalize_search_text(group_label):
-                    parts.append(f"الأستاذ {teacher}")
-                break
-    return " · ".join(dict.fromkeys(part for part in parts if part))
+    clean_group = re.sub(r"[()]+", " ", clean_group)
+    return re.sub(r"\s+", " ", clean_group).strip(" |:،؛.-")
 
 
 def _search_note_display_name(btn: dict, items: list) -> str:

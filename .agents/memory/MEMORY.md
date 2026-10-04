@@ -1,7 +1,7 @@
 - [Telegram bot decline-escalation flow](telegram-decline-escalation.md) — how the "اشتراك إجباري" 5-stage decline ladder is wired across callback_handlers/features/content_delivery; read before touching notif_* logic.
 - [Menu twin-mirroring feature](menu-twin-mirroring.md) — bespoke bidirectional sync between menu pairs (1966<->3101, 2017<->3106); read before touching button/item CRUD or ratings/comments in data_access.py.
 - [Telegram token log safety](telegram-token-log-safety.md) — HTTPX INFO logs can expose Telegram bot tokens embedded in API URLs; keep them suppressed before network requests.
-- [Website note independence](website-note-independence.md) — each PDF is its own website note; other files belong under similar suggestions, not grouped attachments; notify the user before bot edits.
+- [Website note display](website-note-independence.md) — each PDF is its own note, and its teacher belongs in the primary title before year/part, not only in small metadata.
 - [Website guest feedback](website-guest-feedback.md) — no login required; comments require a name, ratings do not; preserve Telegram's shared-feedback configuration.
 - [Website feedback verification](website-feedback-verification.md) — verify nonempty historical data through real projections and account for cross-site preview cookies.
 - [Railway public deployment](website-railway-domain.md) — public domain alameer-iq.com is hosted separately on Railway; workspace preview changes require a Railway deploy.

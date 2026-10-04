@@ -32,3 +32,9 @@ Student/community Telegram group entries, including their nested pages, must rem
 **Why:** The user specified the website is for study notes/books/summaries and identified the sixth-grade student group as bot-only.
 
 **How to apply:** Filter group entries from website navigation, search, and direct pages, while retaining their database records and bot visibility.
+
+Each material's main title must include its teacher, followed by the publication year and then the part/chapter when available; do not leave the teacher only in small subtitle text.
+
+**Why:** The user asked for titles such as «ملزمة الكيمياء للأستاذ فلان 2026 الجزء الفلاني».
+
+**How to apply:** Keep primary labels consistent across listing cards, search results, recommendations, and the file detail heading. Keep subtitles for category context and avoid repeating the teacher there.

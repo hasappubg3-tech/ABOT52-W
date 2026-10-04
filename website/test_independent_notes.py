@@ -161,6 +161,40 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertIn("2025", title)
         self.assertNotIn("2026", title)
 
+    def test_attachment_title_includes_teacher_before_year_and_part(self):
+        item = {
+            **self.files[0],
+            "caption": "ملزمة الكيمياء الجزء 2 2026\nللأستاذ علي حيدر",
+        }
+        self.assertEqual(
+            web._attachment_display_title(item, 1, "📌ملزمة 2027📌"),
+            "ملزمة الكيمياء للأستاذ علي حيدر 2026 الجزء 2",
+        )
+        self.assertEqual(
+            web._attachment_search_subtitle(item, "📌ملزمة 2027📌"),
+            "ملزمة",
+        )
+
+    def test_teacher_already_in_caption_is_not_duplicated(self):
+        item = {
+            **self.files[0],
+            "caption": "ملزمة الكيمياء للأستاذ علي حيدر 2026 الجزء 2",
+        }
+        self.assertEqual(
+            web._attachment_display_title(item, 1, "ملزمة 2027"),
+            "ملزمة الكيمياء للأستاذ علي حيدر 2026 الجزء 2",
+        )
+
+    def test_legacy_note_title_uses_the_same_teacher_order(self):
+        item = {
+            **self.files[0],
+            "caption": "ملزمة الكيمياء الجزء 2 2026\nللأستاذ علي حيدر",
+        }
+        self.assertEqual(
+            web._note_display_name(self.group, [item]),
+            "ملزمة الكيمياء للأستاذ علي حيدر 2026 الجزء 2",
+        )
+
     def test_download_through_bot_does_not_depend_on_preview_availability(self):
         response = self.client.get("/attachment/first-pdf")
         page = response.get_data(as_text=True)
