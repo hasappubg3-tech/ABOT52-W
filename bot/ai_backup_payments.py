@@ -132,6 +132,9 @@ async def _process_image_batch(wait_msg, m, ctx, uid, pid, images: list, btn_typ
         try:
             async with httpx.AsyncClient() as client:
                 raw = await _call_gemini_vision(client, prompt, [img])
+            if not has_permission(uid, "buttons"):
+                await wait_msg.edit_text("⛔ أُلغيت العملية بعد سحب صلاحية إدارة الأزرار.")
+                return
             if raw == "__SAFETY_BLOCKED__":
                 continue
             if not raw:

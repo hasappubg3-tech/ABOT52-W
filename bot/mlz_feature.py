@@ -386,6 +386,7 @@ def _clear_mlz(ctx):
         'mlz_file_type', 'mlz_file_id', 'mlz_subject', 'mlz_teacher',
         'mlz_grade', 'mlz_year', 'mlz_part', 'mlz_type', 'mlz_desc', 'mlz_path_str',
         'mlz_panel_mid', 'mlz_panel_chat_id', 'mlz_picker_mid', 'mlz_custom_line',
+        'mlz_actor_id',
     ]:
         ctx.user_data.pop(key, None)
     ctx.user_data.pop('state', None)
@@ -588,10 +589,13 @@ async def show_mlz_type_picker(q):
 
 # ── بدء تدفق الملزمة ─────────────────────────────────────────────
 async def start_mlz_flow(m, ctx, uid, chat_id) -> bool:
+    if not has_permission(uid, "ai_upload"):
+        return False
     from .content_delivery import detect_content
     file_type, caption, file_id = detect_content(m)
     if not file_type or file_type == 'text':
         return False
+    ctx.user_data['mlz_actor_id'] = uid
 
     ctx.user_data['mlz_file_type'] = file_type
     ctx.user_data['mlz_file_id']   = file_id
@@ -769,6 +773,11 @@ async def after_mlz_grade_pick(q, ctx, bid: int):
 
 # ── الإنهاء: إنشاء الأزرار وإضافة الملف ─────────────────────────
 async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
+    if not has_permission(uid, "ai_upload"):
+        _clear_mlz(ctx)
+        await m.reply_text("⛔ لا تملك صلاحية إضافة الملازم.")
+        return
+    ctx.user_data['mlz_actor_id'] = uid
     from .content_delivery import upload_to_channel
 
     subject   = ctx.user_data.get('mlz_subject', '')
@@ -847,6 +856,10 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
     _clear_mlz(ctx)
 
 async def _do_add_mlz(wait_msg, ctx, bot, teacher_bid, btn_name, file_type, file_id, desc, path_parts, existing_bid=None):
+    actor = ctx.user_data.get("mlz_actor_id")
+    if not has_permission(actor, "ai_upload"):
+        await wait_msg.edit_text("⛔ أُلغيت العملية بعد سحب صلاحية إضافة الملازم.")
+        return
     from .content_delivery import upload_to_channel
     # إذا مُرِّر existing_bid → أضف لزر موجود بدلاً من إنشاء زر جديد
     if existing_bid:
@@ -857,6 +870,11 @@ async def _do_add_mlz(wait_msg, ctx, bot, teacher_bid, btn_name, file_type, file
         created_new = True
 
     channel_msg_id = await upload_to_channel(bot, file_id, file_type, desc)
+    if not has_permission(actor, "ai_upload"):
+        if created_new:
+            del_btn(content_bid)
+        await wait_msg.edit_text("⛔ أُلغيت العملية بعد سحب صلاحية إضافة الملازم.")
+        return
 
     if get_storage_channel_id() and not channel_msg_id:
         if created_new:
@@ -879,7 +897,7 @@ async def _do_add_mlz(wait_msg, ctx, bot, teacher_bid, btn_name, file_type, file
         parse_mode='Markdown',
         reply_markup=InlineKeyboardMarkup([[
             InlineKeyboardButton("✏️ كتابة الوصف يدوياً", callback_data=f"mlz_ed_{content_bid}")
-        ]])
+        ]]) if has_permission(actor, "buttons") else None
     )
 
 __all__ = [name for name in globals() if not name.startswith("__")]

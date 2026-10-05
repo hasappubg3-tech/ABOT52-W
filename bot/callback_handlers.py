@@ -6,6 +6,11 @@ async def cb_manage(update: Update, ctx):
     uid = q.from_user.id
     d = q.data
 
+    permission = admin_callback_permission(d)
+    if permission and not has_permission(uid, permission):
+        await q.answer("⛔ لا تملك صلاحية استخدام هذا الخيار.", show_alert=True)
+        return
+
     if not is_admin(uid) and not check_rate_limit(uid, 'cb'):
         await q.answer("⏳ أبطئ قليلاً!", show_alert=False)
         return
@@ -327,7 +332,7 @@ async def cb_manage(update: Update, ctx):
 
     # ── ملزمة: تأكيد / إلغاء / تعديل حقل / اختيار صف / اختيار نوع ─────
     if d.startswith("mlz_"):
-        if not is_admin(uid):
+        if not has_permission(uid, admin_callback_permission(d)):
             await q.answer("⛔ غير مصرح.", show_alert=True); return
         chat_id = q.message.chat_id
 
@@ -613,7 +618,7 @@ async def cb_manage(update: Update, ctx):
             return
 
         if d == "don_thanks_set":
-            if not is_admin(uid):
+            if not has_permission(uid, "bot_settings"):
                 await q.answer("هذا الخيار للمشرفين فقط.", show_alert=True); return
             ctx.user_data["state"] = "wait_donation_thanks"
             await q.edit_message_text(
@@ -867,7 +872,7 @@ async def cb_manage(update: Update, ctx):
     if d.startswith("fu_thanks_set_"):
         await q.answer()
         bid = int(d[len("fu_thanks_set_"):])
-        if not is_admin(uid):
+        if not has_permission(uid, "file_requests"):
             await q.answer("هذا الخيار للمشرفين فقط.", show_alert=True); return
         cur_thanks = get_setting(
             "file_upload_thanks_message",
@@ -1507,13 +1512,46 @@ async def cb_manage(update: Update, ctx):
             pass
         return
 
+    permission = admin_callback_permission(d, admin_section=True)
+    if permission and not has_permission(uid, permission):
+        await q.answer("⛔ لا تملك صلاحية استخدام هذا الخيار.", show_alert=True)
+        return
+    if not is_real_admin(uid) or is_preview_mode(uid):
+        await q.answer("⛔ غير مصرح.", show_alert=True)
+        return
     await q.answer()
-    if not is_admin(uid): return
     chat_id = q.message.chat_id
     ctx.user_data["panel_id"] = q.message.message_id
     pid = ctx.user_data.get("pid")
 
     if d == "noop": return
+
+    if d.startswith(("ap_", "apt_")):
+        try:
+            if d.startswith("apt_"):
+                _, target_text, key = d.split("_", 2)
+                target = int(target_text)
+                enabled = not get_admin_permissions(target).get(key, False)
+                set_admin_permission(uid, target, key, enabled)
+            else:
+                target = int(d[3:])
+            if not is_real_admin(target):
+                raise ValueError("هذا المستخدم لم يعد مشرفاً.")
+        except (ValueError, PermissionError) as exc:
+            await q.message.reply_text(f"⛔ {exc}")
+            return
+        name = next((a.get("username") or str(target) for a in all_admins()
+                     if a["id"] == target), str(target))
+        text = (f"صلاحيات المشرف: {name}\n\n"
+                "اضغط على الصلاحية لتفعيلها أو إيقافها.\n"
+                "إضافة الملازم فقط: واجهة عضو عادي، أرسل ملفاً لبدء الإضافة الذكية.\n"
+                "إدارة الأزرار لا تمنح الوصول لإعدادات البوت.")
+        if is_owner_admin(target):
+            text = f"المشرف الرئيسي: {name}\nصلاحياته كاملة ومحمية من التغيير."
+        elif target == uid:
+            text = f"صلاحياتك: {name}\nلا يمكن تعديل صلاحياتك بنفسك."
+        await q.edit_message_text(text, reply_markup=kb_admin_permissions(target, uid))
+        return
 
     if d.startswith("fr_admins_"):
         bid = int(d[len("fr_admins_"):])
@@ -1562,7 +1600,7 @@ async def cb_manage(update: Update, ctx):
 
     if d == "st_backup_menu":
         await q.edit_message_text("💾 *النسخ الاحتياطي*\n\nاختر العملية:", parse_mode="Markdown",
-                                  reply_markup=kb_backup_menu())
+                                  reply_markup=kb_backup_menu(uid))
         return
 
     if d == "st_backup_dl":
@@ -1570,7 +1608,7 @@ async def cb_manage(update: Update, ctx):
         await send_backup(ctx.bot, q.from_user.id)
         try:
             await q.edit_message_text("💾 *النسخ الاحتياطي*\n\nاختر العملية:", parse_mode="Markdown",
-                                      reply_markup=kb_backup_menu())
+                                      reply_markup=kb_backup_menu(uid))
         except Exception:
             pass
         return
@@ -1601,7 +1639,7 @@ async def cb_manage(update: Update, ctx):
 
     if d == "st_back":
         await q.edit_message_text("⚙️ *الاعدادات*", parse_mode="Markdown",
-                                  reply_markup=kb_settings())
+                                  reply_markup=kb_settings(uid))
         return
 
     # ── وضع العمل ────────────────────────────────────────────────
@@ -1990,7 +2028,7 @@ async def cb_manage(update: Update, ctx):
 
     if d == "st_donation_thanks_reset":
         set_setting("donation_thanks_message", default_donation_thanks_message())
-        await q.edit_message_text("✅ تم إرجاع رسالة الشكر الافتراضية.", reply_markup=kb_settings())
+        await q.edit_message_text("✅ تم إرجاع رسالة الشكر الافتراضية.", reply_markup=kb_settings(uid))
         return
 
     if d == "st_broadcast":
@@ -2189,7 +2227,7 @@ async def cb_manage(update: Update, ctx):
     if d == "st_caption_clear":
         set_setting("global_caption", "")
         await q.edit_message_text("✅ تم حذف الكليشة الثابتة.", parse_mode="Markdown",
-                                  reply_markup=kb_settings())
+                                  reply_markup=kb_settings(uid))
         return
 
 
@@ -3295,6 +3333,8 @@ async def cb_manage(update: Update, ctx):
     if d.startswith("da_"):
         tid = int(d[3:])
         if tid == uid: await q.answer("❌ لا يمكنك إزالة نفسك!", show_alert=True); return
+        if is_owner_admin(tid):
+            await q.message.reply_text("⛔ لا يمكن إزالة المشرف الرئيسي."); return
         del_admin(tid)
         await q.edit_message_text(f"👥 *المشرفون* ({len(all_admins())}):",
                                   parse_mode="Markdown", reply_markup=kb_admins_inline()); return

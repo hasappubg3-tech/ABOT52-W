@@ -241,7 +241,7 @@ async def cmd_myid(update: Update, ctx):
 
 async def cmd_storage_status(update: Update, ctx):
     uid = update.effective_user.id
-    if not is_admin(uid):
+    if not has_permission(uid, "bot_settings"):
         return
     ch = get_storage_channel_id()
     summary = get_storage_summary()
@@ -270,7 +270,7 @@ async def cmd_storage_status(update: Update, ctx):
 
 async def cmd_repair_storage(update: Update, ctx):
     uid = update.effective_user.id
-    if not is_admin(uid):
+    if not has_permission(uid, "bot_settings"):
         return
     ch = get_storage_channel_id()
     if not ch:
@@ -370,10 +370,20 @@ async def on_message(update: Update, ctx):
     pid = ctx.user_data.get("pid")
     chat_id = m.chat_id
 
+    permission = admin_state_permission(state)
+    if permission and not has_permission(uid, permission):
+        ctx.user_data.pop("state", None)
+        for key in list(ctx.user_data):
+            if key.startswith(("mlz_", "img_batch", "quick_add_")):
+                ctx.user_data.pop(key, None)
+        await m.reply_text("⛔ تم إلغاء العملية: لا تملك الصلاحية المطلوبة.",
+                           reply_markup=build_kb(uid, pid))
+        return
+
     track_message(uid)
     _u = update.effective_user
     update_user_info(uid, username=_u.username, first_name=_u.first_name)
-    if is_admin(uid) and _u.username:
+    if is_real_admin(uid) and _u.username:
         update_admin_username(uid, _u.username)
 
     if not is_admin(uid) and not check_rate_limit(uid, 'msg'):
@@ -398,7 +408,7 @@ async def on_message(update: Update, ctx):
         state = None
 
     # ── حفظ إيموجي متحرك تلقائياً (للمشرفين — في أي حالة، بصمت) ──
-    if is_admin(uid) and state != "wait_emoji_num":
+    if has_permission(uid, "bot_settings") and state != "wait_emoji_num":
         _all_ents = list(m.entities or []) + list(m.caption_entities or [])
         _custom = [e for e in _all_ents
                    if e.type == MessageEntity.CUSTOM_EMOJI and e.custom_emoji_id]
@@ -479,9 +489,7 @@ async def on_message(update: Update, ctx):
                 )
                 return
             ctx.user_data.pop("state", None)
-            admins = get_file_request_admins()
-            if not admins:
-                admins = [{"user_id": a["id"], "username": a.get("username")} for a in all_admins()]
+            admins = get_authorized_file_admins()
             user = update.effective_user
             username = f"@{user.username}" if user.username else "لا يوجد"
             full_name = user.full_name or "مستخدم"
@@ -552,9 +560,7 @@ async def on_message(update: Update, ctx):
         else:
             bid = ctx.user_data.pop("file_request_bid", None)
             ctx.user_data.pop("state", None)
-            admins = get_file_request_admins()
-            if not admins:
-                admins = [{"user_id": a["id"], "username": a.get("username")} for a in all_admins()]
+            admins = get_authorized_file_admins()
             user = update.effective_user
             username = f"@{user.username}" if user.username else "لا يوجد"
             full_name = user.full_name or "مستخدم"
@@ -622,9 +628,7 @@ async def on_message(update: Update, ctx):
             clear_file_convo(uid)
             await m.reply_text("🔚 تم إنهاء المحادثة مع المشرف.", reply_markup=build_kb(uid, pid))
         else:
-            admins = get_file_request_admins()
-            if not admins:
-                admins = [{"user_id": a["id"], "username": a.get("username")} for a in all_admins()]
+            admins = get_authorized_file_admins()
             reply_btn = InlineKeyboardMarkup([[
                 InlineKeyboardButton("↩️ رد على المستخدم", callback_data=f"freply_{uid}")
             ]])
@@ -645,9 +649,7 @@ async def on_message(update: Update, ctx):
     if m.reply_to_message and not is_file_supervisor(uid):
         replied_mid = m.reply_to_message.message_id
         if is_user_reply_msg(uid, replied_mid):
-            admins = get_file_request_admins()
-            if not admins:
-                admins = [{"user_id": a["id"], "username": a.get("username")} for a in all_admins()]
+            admins = get_authorized_file_admins()
             sent_count = 0
             for admin in admins:
                 try:
@@ -987,7 +989,7 @@ async def on_message(update: Update, ctx):
         ctx.user_data.pop("state", None)
         await set_panel(ctx, chat_id,
                         f"✅ تم حفظ رسالة البداية:\n\n{m.text}\n\n⚙️ *الإعدادات*",
-                        kb_settings())
+                        kb_settings(uid))
         await m.reply_text("✅ تم حفظ رسالة البداية.", reply_markup=build_kb(uid, pid))
         return
 
@@ -999,7 +1001,7 @@ async def on_message(update: Update, ctx):
         ctx.user_data.pop("state", None)
         await set_panel(ctx, chat_id,
                         f"✅ تم حفظ الكليشة الثابتة:\n\n{m.text}\n\n⚙️ *الاعدادات*",
-                        kb_settings())
+                        kb_settings(uid))
         await m.reply_text("✅ تم حفظ الكليشة.", reply_markup=build_kb(uid, pid))
         return
 
@@ -1011,7 +1013,7 @@ async def on_message(update: Update, ctx):
         await set_panel(ctx, chat_id,
                         f"✅ تم حفظ رسالة شكر التبرع:\n\n{m.text}\n\n"
                         "تقدر تستخدم `{stars}` داخل النص حتى يظهر عدد النجوم.",
-                        kb_settings())
+                        kb_settings(uid))
         await m.reply_text("✅ تم حفظ رسالة شكر التبرع.", reply_markup=build_kb(uid, pid))
         return
 
@@ -1947,7 +1949,7 @@ async def on_message(update: Update, ctx):
             )
             return
         label     = ctx.user_data.pop("cd_label", "موعد")
-        is_global = ctx.user_data.pop("cd_global", is_admin(uid))
+        is_global = ctx.user_data.pop("cd_global", is_admin(uid)) and is_admin(uid)
         ctx.user_data.pop("state", None)
         owner_id  = None if is_global else uid
         cd_add(label=label, target_dt=dt, owner_id=owner_id, created_by=uid)
@@ -2076,7 +2078,9 @@ async def on_message(update: Update, ctx):
     if state == "wait_admin_id":
         try: tid = int(text)
         except ValueError: await m.reply_text("⚠️ أرسل رقم ID صحيح."); return
-        add_admin(tid); ctx.user_data.pop("state", None)
+        if tid <= 0:
+            await m.reply_text("⚠️ أرسل رقم ID موجباً."); return
+        add_delegated_admin(uid, tid); ctx.user_data.pop("state", None)
         await set_panel(ctx, chat_id, f"👥 *المشرفون* ({len(all_admins())}):", kb_admins_inline())
         await m.reply_text("✅", reply_markup=build_kb(uid, pid))
         return
@@ -2220,7 +2224,7 @@ async def on_message(update: Update, ctx):
                 return
 
     # ── ملزمة: ملف جديد من المشرف (خارج وضع الإضافة اليدوية) ────────
-    if not state and is_admin(uid) and (
+    if not state and has_permission(uid, "ai_upload") and (
         m.document or m.video or m.audio or m.voice or
         (m.photo and not (m.caption or "").strip().startswith("."))
     ):
@@ -2252,6 +2256,9 @@ async def on_message(update: Update, ctx):
         wait_msg = await m.reply_text("⏳ جاري التواصل مع الذكاء الاصطناعي...")
         current_btns = get_buttons(pid)
         action, operations, del_idx, error = await process_ai_request(request_text, current_btns)
+        if not has_permission(uid, "buttons"):
+            await wait_msg.edit_text("⛔ أُلغيت العملية بعد سحب صلاحية إدارة الأزرار.")
+            return
         if error:
             await wait_msg.edit_text(error)
             return
@@ -2465,7 +2472,7 @@ async def on_message(update: Update, ctx):
         return
 
     # ── نسخة احتياطية يدوية ───────────────────────────────────────
-    if not state and text == "نسخة احتياطية" and is_admin(uid):
+    if not state and text == "نسخة احتياطية" and has_permission(uid, "backups"):
         await m.reply_text("⏳ جاري إنشاء النسخة الاحتياطية...")
         await send_backup(ctx.bot, uid)
         return
@@ -2486,6 +2493,13 @@ async def on_message(update: Update, ctx):
             parse_mode="Markdown",
             reply_markup=markup
         )
+        return
+
+    if text == BTN_SETTINGS:
+        if has_permission(uid, "settings_menu"):
+            await set_panel(ctx, chat_id, "⚙️ *الاعدادات*", kb_settings(uid))
+        else:
+            await m.reply_text("⛔ لا تملك صلاحية الوصول لإعدادات البوت.")
         return
 
     # ── أزرار المشرف ──────────────────────────────────────────────
@@ -2526,9 +2540,6 @@ async def on_message(update: Update, ctx):
                 await m.reply_text("⚠️ يجب أن يكون هناك زران على الأقل للتبديل.")
             else:
                 await set_panel(ctx, chat_id, "🔀 *اختر الزر الأول:*", kb_swap_select(current_pid))
-            return
-        if text == BTN_SETTINGS:
-            await set_panel(ctx, chat_id, "⚙️ *الاعدادات*", kb_settings())
             return
 
     # ── فلتر البحث للملازم ──────────────────────────────────────────────

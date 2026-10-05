@@ -1,4 +1,5 @@
 from .shared import *
+from .admin_permissions import *
 import time as _time
 
 # ── مساعد: تحويل وثيقة MongoDB إلى dict مشابه لـ sqlite3.Row ──────
@@ -123,9 +124,59 @@ def toggle_preview_mode(uid) -> bool:
     return new_val
 
 def is_admin(uid):
-    """المشرف الفعّال — يُصبح False أثناء وضع (معاينة كمستخدم) بحيث تختفي
-    كل أزرار وميزات المشرف في كل أنحاء البوت تلقائياً."""
-    return is_real_admin(uid) and not is_preview_mode(uid)
+    """Existing editing interfaces require the button-management capability."""
+    return has_permission(uid, "buttons")
+
+def is_owner_admin(uid):
+    sid = os.environ.get("SUPER_ADMIN_ID", "").strip()
+    return bool(sid.isdigit() and int(sid) == uid)
+
+def get_admin_permissions(uid):
+    doc = _col("admins").find_one({"id": uid})
+    if not doc:
+        return {key: False for key in ADMIN_PERMISSIONS}
+    if is_owner_admin(uid):
+        return {key: True for key in ADMIN_PERMISSIONS}
+    saved = doc.get("permissions")
+    # Preserve legacy admins, but explicitly configured roles are deny-by-default.
+    return {key: saved is None or saved.get(key) is True for key in ADMIN_PERMISSIONS}
+
+def has_permission(uid, permission):
+    if permission == "owner":
+        return is_owner_admin(uid) and is_real_admin(uid) and not is_preview_mode(uid)
+    if permission == "settings_menu":
+        return any(has_permission(uid, key) for key in (
+            "bot_settings", "admins", "broadcast", "backups", "stats"))
+    if permission == "file_supervisor":
+        return is_file_supervisor(uid)
+    if permission not in ADMIN_PERMISSIONS or is_preview_mode(uid):
+        return False
+    return get_admin_permissions(uid).get(permission, False)
+
+def set_admin_permission(actor, target, permission, enabled):
+    if not has_permission(actor, "admins"):
+        raise PermissionError("لا تملك صلاحية إدارة المشرفين.")
+    if actor == target or is_owner_admin(target):
+        raise PermissionError("لا يمكن تغيير صلاحياتك أو صلاحيات المشرف الرئيسي.")
+    if permission not in ADMIN_PERMISSIONS:
+        raise ValueError("صلاحية غير معروفة.")
+    if enabled and not has_permission(actor, permission):
+        raise PermissionError("لا يمكنك منح صلاحية لا تملكها.")
+    if not is_real_admin(target):
+        raise ValueError("هذا المستخدم لم يعد مشرفاً.")
+    permissions = get_admin_permissions(target)
+    permissions[permission] = bool(enabled)
+    _col("admins").update_one({"id": target}, {"$set": {"permissions": permissions}})
+
+def add_delegated_admin(actor, target):
+    if not has_permission(actor, "admins"):
+        raise PermissionError("لا تملك صلاحية إدارة المشرفين.")
+    if is_real_admin(target):
+        return
+    _col("admins").update_one({"id": target}, {"$set": {
+        "id": target,
+        "permissions": {key: has_permission(actor, key) for key in ADMIN_PERMISSIONS},
+    }}, upsert=True)
 
 def add_admin(uid, name=None):
     _col("admins").update_one({"id": uid}, {"$set": {"id": uid, "username": name}}, upsert=True)
@@ -657,9 +708,16 @@ def set_btn_special_action(bid, action):
 def get_file_request_admins():
     return [_d(r) for r in _col("file_request_admins").find().sort("user_id", 1)]
 
+def get_authorized_file_admins():
+    recipients = [a for a in get_file_request_admins() if is_file_supervisor(a["user_id"])]
+    if recipients:
+        return recipients
+    return [{"user_id": a["id"], "username": a.get("username")}
+            for a in all_admins() if has_permission(a["id"], "file_requests")]
+
 def is_file_supervisor(uid):
-    if is_admin(uid):
-        return True
+    if is_real_admin(uid):
+        return has_permission(uid, "file_requests")
     return _col("file_request_admins").find_one({"user_id": uid}) is not None
 
 def add_file_request_admin(uid, username=None):

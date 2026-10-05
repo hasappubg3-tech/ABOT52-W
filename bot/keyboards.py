@@ -316,11 +316,11 @@ def build_kb(uid, pid=None):
         rows.append([KeyboardButton(BTN_ADD)])
     if pid is not None:
         rows.append([KeyboardButton(BTN_BACK), KeyboardButton(BTN_HOME)])
-    if admin:
+    if has_permission(uid, "settings_menu"):
         rows.append([KeyboardButton(BTN_SETTINGS)])
-    if real_admin:
+    if real_admin and (admin or has_permission(uid, "settings_menu") or is_preview_mode(uid)):
         rows.append([KeyboardButton(BTN_PREVIEW)])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True) if (rows or admin or real_admin) else None
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True) if rows else None
 
 def is_bot_button_text(text: str, pid=None) -> bool:
     if not text:
@@ -954,15 +954,37 @@ def kb_admins_inline():
     rows = []
     for a in all_admins():
         name = a.get("username") or str(a["id"])
-        rows.append([
-            InlineKeyboardButton(f"👤 {name}", callback_data="noop"),
-            InlineKeyboardButton("🗑", callback_data=f"da_{a['id']}"),
-        ])
+        row = [InlineKeyboardButton(f"👤 {name}", callback_data=f"ap_{a['id']}")]
+        if not is_owner_admin(a["id"]):
+            row.append(InlineKeyboardButton("🗑", callback_data=f"da_{a['id']}"))
+        rows.append(row)
     rows.append([InlineKeyboardButton("➕ إضافة مشرف", callback_data="aa")])
     rows.append([InlineKeyboardButton("رجوع", callback_data="st_back")])
     return InlineKeyboardMarkup(rows)
 
-def kb_settings():
+def kb_admin_permissions(target, actor):
+    permissions = get_admin_permissions(target)
+    rows = []
+    if not is_owner_admin(target) and target != actor:
+        for key, label in ADMIN_PERMISSIONS.items():
+            mark = "✅" if permissions[key] else "⭕"
+            rows.append([InlineKeyboardButton(
+                f"{mark} {label}", callback_data=f"apt_{target}_{key}")])
+    rows.append([InlineKeyboardButton("رجوع للمشرفين", callback_data="st_admins")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_backup_menu(uid):
+    rows = []
+    if has_permission(uid, "backups"):
+        rows.append([InlineKeyboardButton("تنزيل نسخة احتياطية", callback_data="st_backup_dl")])
+    if has_permission(uid, "owner"):
+        rows.append([InlineKeyboardButton("استعادة نسخة (للمشرف الرئيسي فقط)", callback_data="st_restore")])
+    rows.append([InlineKeyboardButton("رجوع", callback_data="st_back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_settings(uid):
     global_cap = get_global_caption()
     cap_btns = get_caption_buttons()
     notif1_on  = get_setting("notif_enabled", "1") == "1"
@@ -974,7 +996,7 @@ def kb_settings():
     lib_icon = "✅" if lib_url else "⭕"
     work_on  = get_work_mode()
     work_label = "🔧 وضع العمل: 🟢 مفعّل" if work_on else "🔧 وضع العمل: ⭕"
-    return InlineKeyboardMarkup([
+    rows = [
         [InlineKeyboardButton(work_label,                         callback_data="st_work_mode")],
         [InlineKeyboardButton("👥 المشرفون",                      callback_data="st_admins"),
          InlineKeyboardButton("💾 النسخ الاحتياطي",               callback_data="st_backup_menu")],
@@ -990,7 +1012,12 @@ def kb_settings():
          InlineKeyboardButton("🤖 إعدادات AI",                    callback_data="st_ai_settings")],
         [InlineKeyboardButton(f"📚 المكتبة {lib_icon}",            callback_data="st_library"),
          InlineKeyboardButton("🎨 رموز الإيموجي",                 callback_data="st_emoji")],
-    ])
+    ]
+    rows = [[button for button in row if has_permission(
+        uid, admin_callback_permission(button.callback_data, admin_section=True))]
+        for row in rows]
+    rows = [row for row in rows if row]
+    return InlineKeyboardMarkup(rows)
 
 def kb_work_mode():
     work_on = get_work_mode()

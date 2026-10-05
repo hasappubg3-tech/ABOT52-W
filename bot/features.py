@@ -471,7 +471,7 @@ def kb_donation_stars(uid=None):
         ],
         [InlineKeyboardButton("✏️ أكتب عدد النجوم", callback_data="don_custom")],
     ]
-    if uid is not None and is_admin(uid):
+    if uid is not None and has_permission(uid, "bot_settings"):
         rows.append([InlineKeyboardButton("✏️ تعديل رسالة الشكر", callback_data="don_thanks_set")])
     rows.append([InlineKeyboardButton("❌ إغلاق", callback_data="don_close")])
     return InlineKeyboardMarkup(rows)
