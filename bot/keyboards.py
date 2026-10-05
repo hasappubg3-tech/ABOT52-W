@@ -1055,6 +1055,7 @@ def kb_emoji_aliases():
 
 def kb_emoji_alias_detail(alias: str):
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("استخدامه لأسماء الملازم التلقائية", callback_data=f"st_mlz_emoji_{alias}")],
         [InlineKeyboardButton(f"🗑 حذف :{alias}:", callback_data=f"st_emoji_del_{alias}")],
         [InlineKeyboardButton("رجوع", callback_data="st_emoji")],
     ])

@@ -1462,6 +1462,16 @@ def save_emoji_alias(alias: str, emoji_id: str, fallback: str, added_by: int):
 def get_emoji_alias(alias: str):
     return _d(_col("emoji_aliases").find_one({"alias": alias}))
 
+def get_mlz_button_emojis():
+    alias = get_setting("mlz_button_emoji_alias", "")
+    doc = get_emoji_alias(alias) if alias else None
+    if not doc or not doc.get("fallback") or not doc.get("emoji_id"):
+        raise ValueError(
+            "حدد إيموجي أسماء الملازم من الإعدادات ← رموز الإيموجي ← "
+            "اختر الإيموجي ← استخدامه لأسماء الملازم التلقائية."
+        )
+    return {doc["fallback"]: str(doc["emoji_id"])}
+
 def get_all_emoji_aliases() -> list:
     return [_d(d) for d in _col("emoji_aliases").find().sort("alias", 1)]
 

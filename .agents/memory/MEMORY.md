@@ -8,3 +8,4 @@
 - [Forgiving Arabic search](website-forgiving-search.md) — students should find materials despite spelling variants, minor typos, and extra words; exact teacher matches remain most relevant.
 - [Website search visibility](website-search-visibility.md) — generate metadata automatically from real materials; keep SEO descriptions out of the visible page.
 - [Telegram admin role policy](admin-role-policy.md) — AI-upload-only supervisors act as members; button management is separate from bot settings; preserve legacy access until configured.
+- [Automatic material-title style](mlz-label-style.md) — type + year + selected custom emoji once at the end; no pin-wrapped names.

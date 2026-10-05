@@ -1811,6 +1811,20 @@ async def cb_manage(update: Update, ctx):
         )
         return
 
+    if d.startswith("st_mlz_emoji_"):
+        alias = d[len("st_mlz_emoji_"):]
+        emoji = get_emoji_alias(alias)
+        if not emoji or not emoji.get("fallback") or not emoji.get("emoji_id"):
+            await q.edit_message_text("الإيموجي غير موجود أو غير صالح.")
+            return
+        set_setting("mlz_button_emoji_alias", alias)
+        await q.edit_message_text(
+            f"تم تعيين الإيموجي رقم/رمز {alias} لأسماء الملازم التلقائية.\n"
+            "التنسيق: نوع الملف + السنة + الإيموجي المخصص، دون رمزي دبوس.",
+            reply_markup=kb_emoji_alias_detail(alias),
+        )
+        return
+
     # ── إعدادات AI ────────────────────────────────────────────────
     if d == "st_ai_settings":
         await q.edit_message_text(

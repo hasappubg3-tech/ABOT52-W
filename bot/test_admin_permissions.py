@@ -315,7 +315,8 @@ class PermissionHandlerTests(PermissionFixture, unittest.IsolatedAsyncioTestCase
     async def test_ai_only_can_save_file_without_existing_content_edit_controls(self):
         from bot import content_delivery
         wait = SimpleNamespace(edit_text=AsyncMock())
-        ctx = SimpleNamespace(user_data={"mlz_actor_id": 902})
+        ctx = SimpleNamespace(user_data={"mlz_actor_id": 902,
+                                        "mlz_label_emojis": {"🔸": "test-emoji-id"}})
         with patch.object(mlz, "add_btn", return_value=20) as create, \
                 patch.object(mlz, "add_item") as add_file, \
                 patch.object(mlz, "get_storage_channel_id", return_value=None), \
@@ -329,7 +330,8 @@ class PermissionHandlerTests(PermissionFixture, unittest.IsolatedAsyncioTestCase
     async def test_revocation_during_upload_prevents_final_save(self):
         from bot import content_delivery
         wait = SimpleNamespace(edit_text=AsyncMock())
-        ctx = SimpleNamespace(user_data={"mlz_actor_id": 902})
+        ctx = SimpleNamespace(user_data={"mlz_actor_id": 902,
+                                        "mlz_label_emojis": {"🔸": "test-emoji-id"}})
 
         async def revoke(*args):
             self.store.records[902]["permissions"] = {}

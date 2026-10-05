@@ -1,4 +1,5 @@
 from .shared import *
+from .mlz_labels import build_mlz_label
 import re as _re
 
 # ── الأنواع الشائعة للملزمة ───────────────────────────────────────
@@ -378,15 +379,15 @@ def _build_desc(subject, teacher, grade, year, part='', mlz_type='ملزمة', c
     lines.append("⚜️ | دقة عالية قابلة للسحب")
     return "\n".join(lines)
 
-def _build_btn_name(mlz_type, year):
-    return f"📌{mlz_type} {year}📌"
+def _build_btn_name(mlz_type, year, label_emojis):
+    return build_mlz_label(_strip_emoji(mlz_type), year, label_emojis)
 
 def _clear_mlz(ctx):
     for key in [
         'mlz_file_type', 'mlz_file_id', 'mlz_subject', 'mlz_teacher',
         'mlz_grade', 'mlz_year', 'mlz_part', 'mlz_type', 'mlz_desc', 'mlz_path_str',
         'mlz_panel_mid', 'mlz_panel_chat_id', 'mlz_picker_mid', 'mlz_custom_line',
-        'mlz_actor_id',
+        'mlz_actor_id', 'mlz_label_emojis',
     ]:
         ctx.user_data.pop(key, None)
     ctx.user_data.pop('state', None)
@@ -778,6 +779,11 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
         await m.reply_text("⛔ لا تملك صلاحية إضافة الملازم.")
         return
     ctx.user_data['mlz_actor_id'] = uid
+    try:
+        ctx.user_data['mlz_label_emojis'] = get_mlz_button_emojis()
+    except ValueError as exc:
+        await m.reply_text(f"⚠️ {exc}")
+        return
     from .content_delivery import upload_to_channel
 
     subject   = ctx.user_data.get('mlz_subject', '')
@@ -813,7 +819,7 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
         _clear_mlz(ctx)
         return
 
-    btn_name = _build_btn_name(mlz_type, year)
+    btn_name = _build_btn_name(mlz_type, year, ctx.user_data['mlz_label_emojis'])
 
     # ── كشف التكرار قبل الحفظ ─────────────────────────────────
     existing_children = get_buttons(teacher_btn['id'])
@@ -866,7 +872,11 @@ async def _do_add_mlz(wait_msg, ctx, bot, teacher_bid, btn_name, file_type, file
         content_bid = existing_bid
         created_new = False
     else:
-        content_bid = add_btn(teacher_bid, 'content', btn_name)
+        label_emojis = ctx.user_data.get("mlz_label_emojis")
+        if not label_emojis:
+            await wait_msg.edit_text("⚠️ إعداد إيموجي الملزمة مفقود. أعد إرسال الملف.")
+            return
+        content_bid = add_btn(teacher_bid, 'content', btn_name, label_emojis=label_emojis)
         created_new = True
 
     channel_msg_id = await upload_to_channel(bot, file_id, file_type, desc)
