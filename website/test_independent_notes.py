@@ -17,6 +17,13 @@ class SortedRows(list):
         return self
 
 
+class EmptyAttachmentCollection:
+    def find(self, query, *args):
+        if "file_id" not in query:
+            raise AssertionError("Unexpected database access")
+        return SortedRows()
+
+
 class IndependentNotesTests(unittest.TestCase):
     def setUp(self):
         self.group = {
@@ -34,6 +41,12 @@ class IndependentNotesTests(unittest.TestCase):
             web._normalize_search_text(web._search_item_text(item)) for item in self.files
         ]
         normalized_label = web._normalize_search_text(self.group["label"])
+
+        def no_database_access(name):
+            if name == "content_items":
+                return EmptyAttachmentCollection()
+            raise AssertionError("Unexpected database access")
+
         self.record = {
             "button": self.group, "items": self.files, "label": self.group["label"],
             "normalized_label": normalized_label,
@@ -57,7 +70,7 @@ class IndependentNotesTests(unittest.TestCase):
                 "comments": [], "user_rating": None, "guest_name": "", "shared": False,
             }),
             patch.object(web, "_has_content_media", return_value=False),
-            patch.object(web, "_col", side_effect=AssertionError("Unexpected database access")),
+            patch.object(web, "_col", side_effect=no_database_access),
         ]
         for mocked in patches:
             mocked.start()

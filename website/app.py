@@ -563,6 +563,59 @@ def _find_visible_attachment(file_id: str) -> dict | None:
                     "item": item,
                     "index": index,
                 }
+
+    # Category pages can list visible study files that are intentionally absent
+    # from the search index (for example, a button titled only "واجبات").
+    # Resolve those links from the source records, but keep hidden/deleted paths
+    # and student-group content inaccessible.
+    candidates = _col("content_items").find({
+        "file_id": file_id,
+        "type": {"$in": ["document", "file"]},
+    })
+    for item in candidates:
+        bid = item.get("button_id")
+        button = _col("buttons").find_one({
+            "id": bid, "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
+        })
+        if (not button or button.get("type") != "content"
+                or _is_bot_only_entry(button)):
+            continue
+
+        root = button
+        parent_id = button.get("parent_id")
+        visited = {bid}
+        visible_path = True
+        while parent_id is not None:
+            if parent_id in visited:
+                visible_path = False
+                break
+            visited.add(parent_id)
+            parent = _col("buttons").find_one({
+                "id": parent_id, "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
+            })
+            if not parent or _is_bot_only_entry(parent):
+                visible_path = False
+                break
+            root = parent
+            parent_id = parent.get("parent_id")
+
+        if not visible_path or not _is_grade_menu(root):
+            continue
+
+        items = _items(bid)
+        for index, visible_item in _file_items(items):
+            if visible_item.get("file_id") == file_id:
+                record = {
+                    "button": button,
+                    "items": items,
+                    "label": button.get("label", ""),
+                }
+                return {
+                    "record": record,
+                    "button": button,
+                    "item": visible_item,
+                    "index": index,
+                }
     return None
 
 
