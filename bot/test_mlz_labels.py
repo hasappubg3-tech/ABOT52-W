@@ -1,5 +1,7 @@
 """Material-title regressions; no live database writes or Telegram requests."""
 import unittest
+import time
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -8,7 +10,7 @@ from bot.loader import load_bot_symbols
 load_bot_symbols()
 
 from bot import data_access as data, mlz_feature as mlz, content_delivery as delivery
-from bot import keyboards, callback_handlers as callbacks
+from bot import keyboards, callback_handlers as callbacks, message_handlers as messages
 from bot.admin_permissions import admin_callback_permission
 from bot.mlz_labels import build_mlz_label, legacy_mlz_label_plan
 
@@ -107,6 +109,7 @@ class MaterialLabelHandlerTests(unittest.IsolatedAsyncioTestCase):
         message = SimpleNamespace(edit_text=AsyncMock())
         name = mlz._build_btn_name("وزاريات", "2026", STYLE)
         with patch.object(mlz, "has_permission", return_value=True), \
+                patch.object(mlz, "get_mlz_button_emojis", return_value=STYLE), \
                 patch.object(mlz, "add_btn", return_value=55) as create, \
                 patch.object(mlz, "add_item") as save, \
                 patch.object(mlz, "get_storage_channel_id", return_value=None), \
@@ -115,6 +118,54 @@ class MaterialLabelHandlerTests(unittest.IsolatedAsyncioTestCase):
                                  "الوصف", ["الصف", name])
             create.assert_called_once_with(22, "content", "وزاريات 2026 🔸", label_emojis=STYLE)
             save.assert_called_once_with(55, "document", "الوصف", "file-1", None, None)
+
+    async def test_cached_pin_wrapped_confirmation_is_reformatted_at_final_save(self):
+        ctx = SimpleNamespace(user_data={"mlz_actor_id": 10,
+                                        "mlz_label_emojis": {"⭐": "old-emoji"}})
+        wait = SimpleNamespace(edit_text=AsyncMock())
+        with patch.object(mlz, "has_permission", return_value=True), \
+                patch.object(mlz, "get_mlz_button_emojis", return_value=STYLE), \
+                patch.object(mlz, "add_btn", return_value=55) as create, \
+                patch.object(mlz, "add_item"), \
+                patch.object(mlz, "get_storage_channel_id", return_value=None), \
+                patch.object(delivery, "upload_to_channel", new_callable=AsyncMock, return_value=None):
+            await mlz._do_add_mlz(wait, ctx, None, 22, "📌ملزمة (2027)📌",
+                                 "file", "file-1", "", ["الصف", "📌ملزمة (2027)📌"])
+            create.assert_called_once_with(22, "content", "ملزمة 2027 🔸", label_emojis=STYLE)
+            self.assertIn("ملزمة 2027 🔸", wait.edit_text.call_args.args[0])
+            self.assertNotIn("📌", wait.edit_text.call_args.args[0])
+
+    async def test_failed_upload_never_creates_empty_content_button(self):
+        ctx = SimpleNamespace(user_data={"mlz_actor_id": 10})
+        wait = SimpleNamespace(edit_text=AsyncMock())
+        with patch.object(mlz, "has_permission", return_value=True), \
+                patch.object(mlz, "get_mlz_button_emojis", return_value=STYLE), \
+                patch.object(mlz, "add_btn") as create, \
+                patch.object(mlz, "add_item") as save, \
+                patch.object(mlz, "get_storage_channel_id", return_value=-100), \
+                patch.object(delivery, "upload_to_channel", new_callable=AsyncMock, return_value=None):
+            await mlz._do_add_mlz(wait, ctx, None, 22, "ملزمة 2027", "file", "file-1", "", [])
+            create.assert_not_called()
+            save.assert_not_called()
+
+    async def test_failed_database_save_cleans_new_button_but_not_existing_button(self):
+        for existing in (None, 66):
+            with self.subTest(existing=existing):
+                ctx = SimpleNamespace(user_data={"mlz_actor_id": 10})
+                wait = SimpleNamespace(edit_text=AsyncMock())
+                with patch.object(mlz, "has_permission", return_value=True), \
+                        patch.object(mlz, "get_mlz_button_emojis", return_value=STYLE), \
+                        patch.object(mlz, "add_btn", return_value=55), \
+                        patch.object(mlz, "add_item", side_effect=RuntimeError("storage failed")), \
+                        patch.object(mlz, "del_btn") as cleanup, \
+                        patch.object(mlz, "get_storage_channel_id", return_value=None), \
+                        patch.object(delivery, "upload_to_channel", new_callable=AsyncMock, return_value=None):
+                    await mlz._do_add_mlz(wait, ctx, None, 22, "ملزمة 2027",
+                                         "file", "file-1", "", [], existing_bid=existing)
+                    if existing is None:
+                        cleanup.assert_called_once_with(55)
+                    else:
+                        cleanup.assert_not_called()
 
     async def test_missing_emoji_configuration_does_not_create_any_buttons(self):
         message = SimpleNamespace(reply_text=AsyncMock())
@@ -144,6 +195,76 @@ class MaterialLabelHandlerTests(unittest.IsolatedAsyncioTestCase):
             await callbacks.cb_manage(SimpleNamespace(callback_query=q), ctx)
             setting.assert_called_once_with("mlz_button_emoji_alias", "9")
             q.edit_message_text.assert_awaited_once()
+
+
+class MaterialButtonPressTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.object(keyboards, "_emoji_cache",
+                                             {"💡": "teacher-emoji", **STYLE}))
+        self.stack.enter_context(patch.object(keyboards, "_emoji_cache_ts", time.time()))
+        db = Mock()
+        db.find_one.return_value = None
+        db.find.return_value.sort.return_value = []
+        db.count_documents.return_value = 0
+        self.stack.enter_context(patch.object(data, "_col", return_value=db))
+
+    def test_legacy_global_teacher_emoji_matches_the_actual_displayed_text(self):
+        teacher = {"id": 22, "type": "compound", "label": "💡جاسم الزبيدي"}
+        self.assertEqual(keyboards.keyboard_display_label(teacher["label"]), "جاسم الزبيدي")
+        self.assertTrue(keyboards.keyboard_label_matches(teacher, "جاسم الزبيدي"))
+
+    def test_explicit_custom_and_plain_emojis_match_their_own_keyboard_text(self):
+        self.assertTrue(keyboards.keyboard_label_matches(
+            {"label": "ملزمة 2027 🔸", "type": "content", "label_emojis": STYLE}, "ملزمة 2027"))
+        self.assertFalse(keyboards.keyboard_label_matches(
+            {"label": "💡جاسم الزبيدي", "label_emojis": {}}, "جاسم الزبيدي"))
+
+    def test_old_pinned_keyboard_still_opens_same_id_after_title_repair(self):
+        button = {"label": "ملزمة 2027 🔸", "type": "content", "label_emojis": STYLE}
+        self.assertTrue(keyboards.keyboard_label_matches(button, "📌ملزمة 2027📌"))
+        self.assertFalse(keyboards.keyboard_label_matches(button, "📌ملزمة 2026📌"))
+        self.assertFalse(keyboards.keyboard_label_matches(button, "ملزمة أخرى"))
+
+    async def test_channel_upload_updates_are_ignored_without_effective_user(self):
+        await messages.on_message(SimpleNamespace(message=None, effective_user=None),
+                                  SimpleNamespace(user_data={}))
+
+    async def test_pressing_teacher_or_repaired_material_reaches_file_delivery(self):
+        cases = [
+            ({"id": 22, "type": "compound", "parent_id": 10, "label": "💡جاسم الزبيدي"},
+             "جاسم الزبيدي"),
+            ({"id": 55, "type": "content", "parent_id": 22,
+              "label": "ملزمة 2027 🔸", "label_emojis": STYLE}, "ملزمة 2027"),
+            ({"id": 55, "type": "content", "parent_id": 22,
+              "label": "ملزمة 2027 🔸", "label_emojis": STYLE}, "📌ملزمة 2027📌"),
+        ]
+        from bot.shared import _encode_bid
+        from bot import pyro_sender
+        for button, display in cases:
+            with self.subTest(display=display):
+                message = SimpleNamespace(
+                    text=display + _encode_bid(button["id"]), chat_id=100,
+                    document=None, photo=None, video=None, audio=None, voice=None,
+                    reply_text=AsyncMock(), caption=None, sticker=None, reply_to_message=None,
+                )
+                update = SimpleNamespace(message=message, effective_user=SimpleNamespace(
+                    id=100, username=None, first_name="عضو"))
+                ctx = SimpleNamespace(user_data={"pid": 10}, bot=Mock())
+                with patch.object(messages, "track_message"), \
+                        patch.object(messages, "update_user_info"), \
+                        patch.object(messages, "is_real_admin", return_value=False), \
+                        patch.object(messages, "is_admin", return_value=False), \
+                        patch.object(messages, "has_permission", return_value=False), \
+                        patch.object(messages, "check_rate_limit", return_value=True), \
+                        patch.object(messages, "get_btn", return_value=button), \
+                        patch.object(messages, "get_buttons_user", return_value=[
+                            {"id": 55, "type": "content", "label": "ملزمة 2027 🔸"}]), \
+                        patch.object(messages, "send_items", new_callable=AsyncMock) as send, \
+                        patch.object(pyro_sender, "send_animated", new_callable=AsyncMock, return_value=False):
+                    await messages.on_message(update, ctx)
+                    send.assert_awaited_once_with(message, 55, uid=100, bot=ctx.bot)
 
 
 if __name__ == "__main__":

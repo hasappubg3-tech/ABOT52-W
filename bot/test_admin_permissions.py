@@ -318,6 +318,7 @@ class PermissionHandlerTests(PermissionFixture, unittest.IsolatedAsyncioTestCase
         ctx = SimpleNamespace(user_data={"mlz_actor_id": 902,
                                         "mlz_label_emojis": {"🔸": "test-emoji-id"}})
         with patch.object(mlz, "add_btn", return_value=20) as create, \
+                patch.object(mlz, "get_mlz_button_emojis", return_value={"🔸": "test-emoji-id"}), \
                 patch.object(mlz, "add_item") as add_file, \
                 patch.object(mlz, "get_storage_channel_id", return_value=None), \
                 patch.object(content_delivery, "upload_to_channel", new_callable=AsyncMock, return_value=None):
@@ -337,14 +338,16 @@ class PermissionHandlerTests(PermissionFixture, unittest.IsolatedAsyncioTestCase
             self.store.records[902]["permissions"] = {}
             return 100
 
-        with patch.object(mlz, "add_btn", return_value=20), \
+        with patch.object(mlz, "add_btn", return_value=20) as create, \
+                patch.object(mlz, "get_mlz_button_emojis", return_value={"🔸": "test-emoji-id"}), \
                 patch.object(mlz, "add_item") as add_file, \
                 patch.object(mlz, "del_btn") as undo, \
                 patch.object(content_delivery, "upload_to_channel", side_effect=revoke):
             await mlz._do_add_mlz(wait, ctx, None, 10, "ملزمة", "document",
                                  "file-1", "الوصف", ["الصف", "المادة"])
             add_file.assert_not_called()
-            undo.assert_called_once_with(20)
+            create.assert_not_called()
+            undo.assert_not_called()
 
 
 if __name__ == "__main__":

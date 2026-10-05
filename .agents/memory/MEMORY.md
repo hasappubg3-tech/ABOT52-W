@@ -9,3 +9,4 @@
 - [Website search visibility](website-search-visibility.md) — generate metadata automatically from real materials; keep SEO descriptions out of the visible page.
 - [Telegram admin role policy](admin-role-policy.md) — AI-upload-only supervisors act as members; button management is separate from bot settings; preserve legacy access until configured.
 - [Automatic material-title style](mlz-label-style.md) — type + year + selected custom emoji once at the end; no pin-wrapped names.
+- [Telegram file verification](telegram-file-verification.md) — getFile download-size errors do not mean a stored document cannot be delivered.

@@ -867,35 +867,44 @@ async def _do_add_mlz(wait_msg, ctx, bot, teacher_bid, btn_name, file_type, file
         await wait_msg.edit_text("⛔ أُلغيت العملية بعد سحب صلاحية إضافة الملازم.")
         return
     from .content_delivery import upload_to_channel
-    # إذا مُرِّر existing_bid → أضف لزر موجود بدلاً من إنشاء زر جديد
-    if existing_bid:
-        content_bid = existing_bid
-        created_new = False
-    else:
-        label_emojis = ctx.user_data.get("mlz_label_emojis")
-        if not label_emojis:
-            await wait_msg.edit_text("⚠️ إعداد إيموجي الملزمة مفقود. أعد إرسال الملف.")
-            return
-        content_bid = add_btn(teacher_bid, 'content', btn_name, label_emojis=label_emojis)
-        created_new = True
+    # Revalidate at the final write: cached duplicate confirmations may contain
+    # old pin-wrapped names or a previously selected emoji.
+    try:
+        label_emojis = get_mlz_button_emojis()
+        for old_fallback in ctx.user_data.get("mlz_label_emojis", {}):
+            btn_name = btn_name.replace(old_fallback, "")
+        btn_name = build_mlz_label(btn_name, "", label_emojis)
+    except ValueError as exc:
+        await wait_msg.edit_text(f"⚠️ {exc}")
+        return
 
     channel_msg_id = await upload_to_channel(bot, file_id, file_type, desc)
     if not has_permission(actor, "ai_upload"):
-        if created_new:
-            del_btn(content_bid)
         await wait_msg.edit_text("⛔ أُلغيت العملية بعد سحب صلاحية إضافة الملازم.")
         return
 
     if get_storage_channel_id() and not channel_msg_id:
-        if created_new:
-            del_btn(content_bid)
         await wait_msg.edit_text(
             "⚠️ لم يتم الحفظ لأن رفع الملف لقناة التخزين فشل.\n"
             "تأكد أن البوت أدمن في قناة التخزين."
         )
         return
 
-    add_item(content_bid, file_type, desc, file_id, None, channel_msg_id)
+    created_new = existing_bid is None
+    content_bid = existing_bid
+    try:
+        if created_new:
+            content_bid = add_btn(teacher_bid, 'content', btn_name, label_emojis=label_emojis)
+        add_item(content_bid, file_type, desc, file_id, None, channel_msg_id)
+    except Exception as exc:
+        if created_new and content_bid is not None:
+            del_btn(content_bid)
+        logging.error("Material save failed (%s); empty button cleaned up", type(exc).__name__)
+        await wait_msg.edit_text("⚠️ تعذر حفظ الملزمة. لم نترك زرّاً جديداً فارغاً؛ أعد المحاولة.")
+        return
+    logging.info("Material content saved with configured custom emoji (button=%s)", content_bid)
+    if created_new and path_parts:
+        path_parts = [*path_parts[:-1], btn_name]
     path_str = " ← ".join(path_parts)
     note = "" if created_new else "📎 *أُضيف لنفس زر المحتوى الموجود*\n\n"
 

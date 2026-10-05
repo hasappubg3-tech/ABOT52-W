@@ -361,6 +361,9 @@ def _extract_label_emojis(m) -> dict:
 
 async def on_message(update: Update, ctx):
     m = update.message
+    # Storage-channel posts have no human effective_user and are not button presses.
+    if m is None or update.effective_user is None:
+        return
     uid = update.effective_user.id
     raw_text = (m.text or "").strip()
     # نفك البصمة غير المرئية الملصقة بنص أزرار الردود لمعرفة الزر المضغوط
@@ -2575,22 +2578,15 @@ async def on_message(update: Update, ctx):
     # ومضموناً لا يتأثر بكشف الأزرار المتشابهة الاسم في أماكن مختلفة.
     if marker_bid is not None:
         matched = get_btn(marker_bid)
-        if matched and matched.get("label") not in (text, _clean):
-            # حماية إضافية: لو تم تعديل اسم الزر بعد بناء الكيبورد، نتجاهل البصمة
-            # استثناء: الأزرار ذات label_emojis تُعرض بدون رمز الإيموجي → نقارن النص المجرّد
-            _le = matched.get("label_emojis") or {}
-            _stripped_lbl = matched.get("label", "")
-            for _ch in _le:
-                _stripped_lbl = _stripped_lbl.replace(_ch, "")
-            _stripped_lbl = _stripped_lbl.strip()
-            if _stripped_lbl not in (text, _clean):
-                matched = None
+        if matched and not any(keyboard_label_matches(matched, value) for value in (text, _clean)):
+            matched = None
         if matched:
             ctx.user_data["pid"] = matched.get("parent_id")
 
     if not matched:
         btns = get_buttons_user(pid) if not is_admin(uid) else get_buttons(pid)
-        matched = next((b for b in btns if b['label'] in (text, _clean)), None)
+        matched = next((b for b in btns
+                        if any(keyboard_label_matches(b, value) for value in (text, _clean))), None)
     if not matched:
         if pid is None:
             # البوت أُعيد تشغيله وضاع pid → نبحث عالمياً فقط من الجذر

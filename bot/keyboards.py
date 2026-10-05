@@ -42,6 +42,30 @@ def _strip_known_emojis(label: str) -> str:
         result = result.replace(char, "")
     return result.strip()
 
+def keyboard_display_label(label, label_emojis=None):
+    """Use the same visible text for keyboard rendering and press resolution."""
+    if label_emojis is None:
+        return _strip_known_emojis(label) if _kb_emoji_id(label) else label
+    if label_emojis:
+        for fallback in label_emojis:
+            label = label.replace(fallback, "")
+        return label.strip()
+    return label
+
+def keyboard_label_matches(button, text):
+    label = button.get("label", "")
+    style = button.get("label_emojis")
+    display = keyboard_display_label(label, style)
+    if text in (label, display):
+        return True
+    # A previous reply keyboard keeps its stable ID after a material-title repair.
+    # Accept only the equivalent legacy title, not an arbitrary renamed button.
+    if button.get("type") == "content" and _re.fullmatch(r"📌[^📌]+📌", text):
+        previous = text[1:-1].strip()
+        previous = _re.sub(r"\((\d{4})\)$", r"\1", previous)
+        return previous == display
+    return False
+
 
 def _inline_btn(label: str, label_emojis, **kwargs) -> InlineKeyboardButton:
     """
@@ -286,15 +310,12 @@ def build_kb(uid, pid=None):
             # زر قديم بدون label_emojis → استخدم القاموس العام
             _eid = _kb_emoji_id(b['label'])
             _btn_kw = {"api_kwargs": {"icon_custom_emoji_id": _eid}} if _eid else {}
-            _display_label = _strip_known_emojis(label) if _eid else label
+            _display_label = keyboard_display_label(label, _btn_le)
         elif _btn_le:
             # زر يحتوي إيموجيات مخصصة محددة → استخدمها فقط
             _eid = next(iter(_btn_le.values()))
             _btn_kw = {"api_kwargs": {"icon_custom_emoji_id": _eid}}
-            _display_label = label
-            for _ch in _btn_le:
-                _display_label = _display_label.replace(_ch, "")
-            _display_label = _display_label.strip()
+            _display_label = keyboard_display_label(label, _btn_le)
         else:
             # زر يحتوي إيموجي عادي فقط → لا أيقونة مخصصة
             _btn_kw = {}

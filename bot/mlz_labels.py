@@ -16,6 +16,7 @@ def build_mlz_label(material_type, year, label_emojis):
     # Do not repeat a fallback already included by the AI or a manual input.
     title = " ".join(part for part in (material_type, year) if part)
     title = " ".join(title.replace(fallback, "").split())
+    title = re.sub(r"\((\d{4})\)$", r"\1", title)
     return f"{title} {fallback}"
 
 
