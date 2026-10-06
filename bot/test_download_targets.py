@@ -31,6 +31,19 @@ class DownloadPayloadTests(unittest.TestCase):
         self.assertLessEqual(len(f"notif_decline_{target}".encode()), 64)
 
 
+class HandoffCollection:
+    def __init__(self, handoff):
+        self.handoff = handoff
+        self.updates = []
+
+    def find_one_and_update(self, query, update, **kwargs):
+        self.claim_query = query
+        return self.handoff
+
+    def update_one(self, query, update):
+        self.updates.append((query, update))
+
+
 class SelectedFileDeliveryTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.files = [
@@ -109,6 +122,43 @@ class SelectedFileDeliveryTests(unittest.IsolatedAsyncioTestCase):
             await messages.cmd_start(self.update, self.ctx)
         send.assert_awaited_once_with(self.message, 10, uid=99, bot=self.bot, item_id=2)
 
+    async def test_web_handoff_is_marked_delivered_only_after_file_send(self):
+        token = "a1b2c3d4e5f6g7h8"
+        collection = HandoffCollection({
+            "_id": token, "button_id": 10, "item_id": 2,
+        })
+        self.ctx.args = [f"handoff_{token}"]
+        with patch.object(
+            messages, "get_mongo_db",
+            return_value={"telegram_download_handoffs": collection},
+        ), patch.object(messages, "get_btn", return_value=self.button), \
+                patch.object(messages, "send_items", new_callable=AsyncMock, return_value=True) as send:
+            await messages.cmd_start(self.update, self.ctx)
+
+        send.assert_awaited_once_with(
+            self.message, 10, uid=99, bot=self.bot, item_id=2
+        )
+        self.assertEqual(
+            collection.updates[-1][1]["$set"]["status"], "delivered"
+        )
+
+    async def test_web_handoff_stays_open_when_the_bot_did_not_send_a_file(self):
+        token = "a1b2c3d4e5f6g7h8"
+        collection = HandoffCollection({
+            "_id": token, "button_id": 10, "item_id": 2,
+        })
+        self.ctx.args = [f"handoff_{token}"]
+        with patch.object(
+            messages, "get_mongo_db",
+            return_value={"telegram_download_handoffs": collection},
+        ), patch.object(messages, "get_btn", return_value=self.button), \
+                patch.object(messages, "send_items", new_callable=AsyncMock, return_value=False):
+            await messages.cmd_start(self.update, self.ctx)
+
+        self.assertEqual(
+            collection.updates[-1][1]["$set"]["status"], "not_sent"
+        )
+
     async def test_legacy_start_still_dispatches_the_whole_button(self):
         self.ctx.args = ["btn_10"]
         with patch.object(messages, "send_items", new_callable=AsyncMock) as send:
@@ -133,7 +183,10 @@ class SelectedFileDeliveryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.message.reply_text.await_count, 4)
 
     async def test_real_sender_delivers_only_the_selected_document(self):
-        await delivery.send_items(self.message, 10, uid=99, bot=self.bot, item_id=2)
+        delivered = await delivery.send_items(
+            self.message, 10, uid=99, bot=self.bot, item_id=2
+        )
+        self.assertTrue(delivered)
         self.message.reply_document.assert_awaited_once_with(
             "second-file", caption="الجزء الثاني")
         delivery.get_items.assert_not_called()
@@ -163,9 +216,12 @@ class SelectedFileDeliveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_new_notification_gate_carries_the_item_identifier(self):
         delivery.is_subscribed.return_value = False
         with patch.object(delivery, "send_notif_gate", new_callable=AsyncMock) as gate:
-            await delivery.send_items(self.message, 10, uid=99, bot=self.bot, item_id=2)
+            delivered = await delivery.send_items(
+                self.message, 10, uid=99, bot=self.bot, item_id=2
+            )
         gate.assert_awaited_once_with(self.message, 99, 10, item_id=2)
         self.message.reply_document.assert_not_awaited()
+        self.assertFalse(delivered)
 
     async def test_pending_gate_is_reissued_for_the_current_selected_item(self):
         delivery.get_pending_notif.return_value = 10

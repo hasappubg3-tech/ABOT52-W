@@ -459,7 +459,7 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
                     await m.reply_text(f"⏳ مزاعلين، ما ارد عليك لمدة {mins} دقيقة .")
                 except Exception:
                     pass
-                return
+                return False
 
         # النظام 1: هل هناك تنبيه منبثق معلق؟
         pending_bid = get_pending_notif(uid)
@@ -467,7 +467,7 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
             if pending_bid != bid:
                 set_pending_notif(uid, bid)
             await resend_notif_gate(m, uid, bid, item_id=item_id)
-            return
+            return False
 
         # فحص الاشتراك في القناة (مرة واحدة فقط)
         # True = مشترك | False = غير مشترك | None = تعذّر الفحص
@@ -478,13 +478,13 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
             inc_user_opens(uid)
             if should_notify(uid):
                 await send_notif_gate(m, uid, bid, item_id=item_id)
-                return  # حجب المحتوى عند ظهور التنبيه المنبثق
+                return False  # حجب المحتوى عند ظهور التنبيه المنبثق
 
     items = get_items_user(bid) if (uid and not is_admin(uid)) else get_items(bid)
     items = _select_download_items(items, item_id)
     if not items:
         await m.reply_text("هذا الملف غير متاح حالياً." if item_id is not None else "📭 لا يوجد محتوى بعد.")
-        return
+        return False
     if uid and not is_admin(uid):
         inc_click_count(bid, uid)
     b = get_btn(bid)
@@ -503,6 +503,7 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
         except Exception:
             pass
 
+    delivered_any = False
     for group in _group_items(items):
         if len(group) > 1 and _eff_bot:
             # إرسال الألبوم دفعة واحدة
@@ -510,11 +511,13 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
                 _eff_bot, m.chat_id, group,
                 extra_caption=extra_cap, reply_markup=link_markup
             )
+            delivered_any = delivered_any or bool(sent_list)
             if sent_list and uid and not is_admin(uid) and not unified and not ratings_hidden:
                 await send_item_rating_message(m, group[0], uid=uid)
         else:
             item = group[0]
             sent = await send_file_item(m, item, extra_caption=extra_cap, reply_markup=link_markup, bot=bot)
+            delivered_any = delivered_any or bool(sent)
             if sent and uid and not is_admin(uid) and not unified and not ratings_hidden:
                 await send_item_rating_message(m, item, uid=uid)
 
@@ -530,6 +533,8 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
     # إرسال تقييم موحد واحد في الأسفل إذا كان توحيد التقييم مفعّلاً وغير مخفي
     if uid and not is_admin(uid) and unified and not ratings_hidden:
         await send_btn_unified_rating_message(m, bid, uid=uid)
+
+    return delivered_any
 
 # ── إرسال سؤال كويز للمستخدم ─────────────────────────────────────
 def _quiz_session_key(bid):

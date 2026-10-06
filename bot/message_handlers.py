@@ -1,3 +1,5 @@
+import re
+from pymongo import ReturnDocument
 from .download_targets import parse_delivery_target
 from .shared import *
 
@@ -200,6 +202,56 @@ def _gc_calc_result(grades: dict) -> str:
 
 async def cmd_start(update: Update, ctx):
     uid = update.effective_user.id
+    # طلب تحميل قادم من التطبيق المصغّر؛ يحتفظ الموقع بحالة الإرسال المؤقتة.
+    if ctx.args and ctx.args[0].startswith("handoff_"):
+        token = ctx.args[0][8:]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16}", token):
+            await update.message.reply_text("رابط التحميل غير صالح. ارجع إلى الموقع وحاول مرة أخرى.")
+            return
+
+        handoffs = get_mongo_db()["telegram_download_handoffs"]
+        now = datetime.datetime.utcnow()
+        handoff = handoffs.find_one_and_update(
+            {
+                "_id": token,
+                "status": "pending",
+                "expires_at": {"$gt": now},
+            },
+            {"$set": {"status": "processing", "started_at": now}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not handoff:
+            await update.message.reply_text("انتهت صلاحية رابط التحميل. ارجع إلى الموقع واضغط تحميل مرة أخرى.")
+            return
+
+        button_id = handoff.get("button_id")
+        item_id = handoff.get("item_id")
+        button = get_btn(button_id)
+        if not button or button.get("type") != "content" or button.get("hidden"):
+            handoffs.update_one(
+                {"_id": token}, {"$set": {"status": "not_sent"}}
+            )
+            await update.message.reply_text("هذا الملف غير متاح حالياً. اختر ملفاً آخر من الموقع.")
+            return
+
+        try:
+            delivered = await send_items(
+                update.message, button_id, uid=uid, bot=ctx.bot, item_id=item_id
+            )
+        except Exception:
+            handoffs.update_one(
+                {"_id": token}, {"$set": {"status": "failed"}}
+            )
+            logging.warning("Telegram download handoff could not send its content")
+            await update.message.reply_text("تعذّر إرسال الملف. ارجع إلى الموقع وحاول مرة أخرى.")
+            return
+
+        handoffs.update_one(
+            {"_id": token},
+            {"$set": {"status": "delivered" if delivered else "not_sent"}},
+        )
+        return
+
     # معالجة رابط التحدي /start ch_<id>
     if ctx.args and ctx.args[0].startswith("ch_"):
         challenge_id = ctx.args[0][3:]

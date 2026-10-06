@@ -148,6 +148,8 @@ class IndependentNotesTests(unittest.TestCase):
         page = response.get_data(as_text=True)
         detail, similar = page.split("ملفات مشابهة", 1)
         self.assertIn(web._bot_download_url(10, 1), detail)
+        self.assertIn('data-telegram-handoff-target="10_1"', detail)
+        self.assertIn('data-telegram-handoff-url="/api/telegram-download-handoffs"', detail)
         self.assertNotIn(web._bot_download_url(10), detail)
         self.assertNotIn('src="/file/', detail)
         self.assertNotIn("second-pdf", detail)
@@ -286,7 +288,10 @@ class IndependentNotesTests(unittest.TestCase):
         ]):
             response = self.client.get("/note/10")
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn("ملفات الملزمة", response.get_data(as_text=True))
+        page = response.get_data(as_text=True)
+        self.assertNotIn("ملفات الملزمة", page)
+        self.assertIn('data-telegram-handoff-target="10"', page)
+        self.assertIn("/static/js/telegram-handoff.js", page)
 
     def test_student_groups_and_their_content_are_hidden_from_site_surfaces(self):
         buttons = {

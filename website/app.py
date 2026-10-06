@@ -9,7 +9,7 @@ import logging
 import unicodedata
 import secrets
 from xml.etree import ElementTree as ET
-from datetime import timedelta
+from datetime import datetime, timedelta
 from threading import Lock
 import requests as _req
 from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash
@@ -17,7 +17,7 @@ from pymongo.errors import PyMongoError
 from . import feedback as feedback_store
 from . import search as search_engine
 from . import seo
-from bot.download_targets import encode_delivery_target
+from bot.download_targets import encode_delivery_target, parse_delivery_target
 
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "Mdry7bot")
@@ -628,6 +628,21 @@ def _bot_download_url(bid: int, item_id: int | None = None) -> str:
     return f"https://t.me/{BOT_USERNAME}?start={payload}"
 
 
+_telegram_handoff_index_lock = Lock()
+_telegram_handoff_index_ready = False
+
+
+def _telegram_handoff_collection():
+    global _telegram_handoff_index_ready
+    collection = _col("telegram_download_handoffs")
+    if not _telegram_handoff_index_ready:
+        with _telegram_handoff_index_lock:
+            if not _telegram_handoff_index_ready:
+                collection.create_index("expires_at", expireAfterSeconds=0)
+                _telegram_handoff_index_ready = True
+    return collection
+
+
 _SIMILAR_TITLE_STOPWORDS = {
     "ملزمة", "ملازم", "ملخص", "ملخصات", "واجب", "واجبات",
     "وزاريات", "وزاري", "الفصل", "فصل", "الجزء", "جزء",
@@ -990,6 +1005,68 @@ def create_app() -> Flask:
                 mimetype="text/plain",
             )
 
+    @app.post("/api/telegram-download-handoffs")
+    def create_telegram_download_handoff():
+        data = request.get_json(silent=True) or {}
+        target = parse_delivery_target(data.get("target", ""))
+        if target is None:
+            abort(400)
+
+        bid, item_id = target
+        button = _btn(bid)
+        if not button or button.get("type") != "content" or button.get("hidden"):
+            abort(404)
+        items = _items(bid)
+        if item_id is None:
+            if not items:
+                abort(404)
+        elif not any(
+            item.get("id") == item_id
+            and item.get("button_id") == bid
+            for item in items
+        ):
+            abort(404)
+
+        now = datetime.utcnow()
+        token = secrets.token_urlsafe(12)
+        try:
+            _telegram_handoff_collection().insert_one({
+                "_id": token,
+                "button_id": bid,
+                "item_id": item_id,
+                "status": "pending",
+                "created_at": now,
+                "expires_at": now + timedelta(hours=1),
+            })
+        except PyMongoError:
+            app.logger.exception("Could not create Telegram download handoff")
+            return jsonify(error="handoff_unavailable"), 503
+
+        response = jsonify(
+            telegram_url=f"https://t.me/{BOT_USERNAME}?start=handoff_{token}",
+            status_url=url_for("telegram_download_handoff_status", token=token),
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response, 201
+
+    @app.get("/api/telegram-download-handoffs/<token>")
+    def telegram_download_handoff_status(token: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{16}", token):
+            abort(404)
+        try:
+            handoff = _telegram_handoff_collection().find_one(
+                {"_id": token},
+                {"status": 1, "expires_at": 1},
+            )
+        except PyMongoError:
+            return jsonify(error="handoff_unavailable"), 503
+        if not handoff or handoff.get("expires_at", datetime.min) <= datetime.utcnow():
+            response = jsonify(status="expired")
+        else:
+            response = jsonify(status=handoff.get("status", "expired"))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     # ── الصفحة الرئيسية ──────────────────────────────────────────────
     @app.route("/")
     def index():
@@ -1115,6 +1192,7 @@ def create_app() -> Flask:
             preview_text=preview_text,
             photos=photos,
             bot_deep_link=bot_deep_link,
+            bot_download_target=encode_delivery_target(bid),
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",
@@ -1156,6 +1234,9 @@ def create_app() -> Flask:
             subtitle=subtitle,
             similar=similar,
             bot_deep_link=_bot_download_url(selected["button"]["id"], item["id"]),
+            bot_download_target=encode_delivery_target(
+                selected["button"]["id"], item["id"]
+            ),
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",

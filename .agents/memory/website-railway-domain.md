@@ -1,13 +1,15 @@
 ---
 name: Railway public deployment
-description: Hosting and domain context for the public study-materials website.
+description: Hosting and deployment context for the public website and Telegram bot.
 ---
 
 The user's public website uses the custom domain `alameer-iq.com` and is hosted on Railway, separately from the Replit workspace preview.
 
-**Why:** The user described the custom domain and Railway hosting; checks confirmed production content can differ from the workspace preview.
+The Telegram bot also runs on Railway.
 
-**How to apply:** Do not imply Replit preview edits are live on the public site. Verify changes on Railway after its deployment updates, and use the public HTTPS domain for production SEO checks.
+**Why:** The user confirmed both the public website and the bot are deployed on Railway; Replit preview changes do not update those production services.
+
+**How to apply:** Do not imply Replit preview edits are live on Railway. Deploy website and bot code changes to their Railway services, and avoid running a second local long-polling bot against the same Telegram bot token.
 
 The user requires sitemap page URLs to use the fixed canonical origin `https://alameer-iq.com`, not the incoming request host or scheme.
 

@@ -32,7 +32,10 @@
       <p class="attachment-page-meta">{{ subtitle | strip_emoji }}</p>
       {% endif %}
       <div class="detail-actions">
-        <a href="{{ bot_deep_link }}" target="_blank" rel="noopener noreferrer" class="btn btn--primary btn--lg">
+        <a href="{{ bot_deep_link }}" target="_blank" rel="noopener noreferrer"
+           data-telegram-handoff-target="{{ bot_download_target }}"
+           data-telegram-handoff-url="{{ url_for('create_telegram_download_handoff') }}"
+           class="btn btn--primary btn--lg">
           تحميل من التلكرام
         </a>
       </div>
