@@ -9,7 +9,7 @@ from bot import keyboards
 
 
 class WebsiteSearchButtonTests(unittest.TestCase):
-    def _build_keyboard(self, button_id):
+    def _build_markup(self, button_id):
         button = {
             "id": button_id,
             "type": "special",
@@ -25,7 +25,15 @@ class WebsiteSearchButtonTests(unittest.TestCase):
             patch.object(keyboards, "has_permission", return_value=False),
             patch.object(keyboards, "_is_mlazm_subject", return_value=False),
         ):
-            return keyboards.build_kb(12345).keyboard[0][0]
+            return keyboards.build_kb(12345)
+
+    def _build_keyboard(self, button_id):
+        return self._build_markup(button_id).keyboard[0][0]
+
+    def test_control_keyboard_requests_persistent_display(self):
+        markup = self._build_markup(14434)
+        self.assertTrue(markup.is_persistent)
+        self.assertTrue(markup.to_dict()["is_persistent"])
 
     def test_search_button_opens_the_website_mini_app(self):
         button = self._build_keyboard(14433)

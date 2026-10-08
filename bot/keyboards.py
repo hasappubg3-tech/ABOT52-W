@@ -351,7 +351,11 @@ def build_kb(uid, pid=None):
         rows.append([KeyboardButton(BTN_SETTINGS)])
     if real_admin and (admin or has_permission(uid, "settings_menu") or is_preview_mode(uid)):
         rows.append([KeyboardButton(BTN_PREVIEW)])
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True) if rows else None
+    return ReplyKeyboardMarkup(
+        rows,
+        resize_keyboard=True,
+        is_persistent=True,
+    ) if rows else None
 
 def is_bot_button_text(text: str, pid=None) -> bool:
     if not text:
