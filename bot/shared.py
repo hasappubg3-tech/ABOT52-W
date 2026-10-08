@@ -90,6 +90,7 @@ BTN_SETTINGS = "⚙️ الاعدادات"
 BTN_SWAP = "🔀 تغيير"
 BTN_EXAM_STATS = "📊 إحصائيات الامتحانات"
 BTN_MLZ_FILTER = "🔍 فلتر البحث"
+MLZ_FILTER_BUTTON_MARKER_ID = 2147483647
 
 ADMIN_BTNS   = {BTN_ADMINS}
 BTN_PLUS = "➕"

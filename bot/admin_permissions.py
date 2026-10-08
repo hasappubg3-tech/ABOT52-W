@@ -13,6 +13,8 @@ ADMIN_PERMISSIONS = {
 
 
 def admin_callback_permission(data, *, admin_section=False):
+    if data == "mfl_rename":
+        return "buttons"
     if data.startswith("ci_website_toggle_"):
         return "buttons"
     if data.startswith("mlz_ed_"):
@@ -60,7 +62,7 @@ _BUTTON_INPUT_STATES = {
     "wait_item_desc", "wait_quiz_question", "wait_quiz_option",
     "wait_quiz_ai_count", "wait_quiz_ai_source", "wait_exam_q", "wait_exam_a",
     "wait_exam_edit_q", "wait_exam_edit_a", "wait_edit_label",
-    "wait_mlz_new_desc",
+    "wait_mlz_new_desc", "wait_filter_button_label",
 }
 
 

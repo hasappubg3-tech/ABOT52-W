@@ -1587,7 +1587,19 @@ async def cb_manage(update: Update, ctx):
 
     if d == "cancel":
         ctx.user_data.pop("state", None)
+        ctx.user_data.pop("mlz_filter_label_panel_id", None)
         await q.edit_message_text("✅ تم الإلغاء."); return
+
+    if d == "mfl_rename":
+        current_label, _ = get_mlz_filter_button_config()
+        ctx.user_data["state"] = "wait_filter_button_label"
+        ctx.user_data["mlz_filter_label_panel_id"] = q.message.message_id
+        await q.edit_message_text(
+            f"✏️ الاسم الحالي لزر فلترة الملازم:\n{current_label}\n\n"
+            "أرسل الاسم الجديد الآن. تقدر تضيف إيموجي مخصص داخل الاسم.",
+            reply_markup=kb_cancel_inline()
+        )
+        return
 
     # ── لوحة الاعدادات ────────────────────────────────────────────
     if d == "st_admins":

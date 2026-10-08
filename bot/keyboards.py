@@ -55,6 +55,30 @@ def keyboard_display_label(label, label_emojis=None):
         return label.strip()
     return label
 
+def get_mlz_filter_button_config():
+    label = get_setting("mlz_filter_button_label", BTN_MLZ_FILTER)
+    if not isinstance(label, str) or not label.strip():
+        label = BTN_MLZ_FILTER
+    label_emojis = get_setting("mlz_filter_button_label_emojis", {})
+    if not isinstance(label_emojis, dict):
+        label_emojis = {}
+    return label.strip(), label_emojis
+
+def set_mlz_filter_button_config(label, label_emojis=None):
+    set_setting("mlz_filter_button_label", label.strip())
+    set_setting("mlz_filter_button_label_emojis", dict(label_emojis or {}))
+
+def is_mlz_filter_button_press(text, marker_bid=None):
+    if marker_bid == MLZ_FILTER_BUTTON_MARKER_ID:
+        return True
+    if not text:
+        return False
+    text = _strip_bid_markers(text).strip()
+    label, label_emojis = get_mlz_filter_button_config()
+    display = keyboard_display_label(label, label_emojis).strip()
+    return text in {label, display, BTN_MLZ_FILTER}
+
+
 def keyboard_label_matches(button, text):
     label = button.get("label", "")
     style = button.get("label_emojis")
@@ -264,7 +288,7 @@ def build_kb(uid, pid=None):
 
     # ── فلتر الملازم: تصفية المدرسين حسب نوع الملف المختار ─────────────
     _show_mlz_filter_btn = False
-    if not admin and _is_mlazm_subject(pid):
+    if _is_mlazm_subject(pid) and (not admin or has_permission(uid, "buttons")):
         _show_mlz_filter_btn = True
         _active_filter = get_mlz_filter(uid, pid)
         if _active_filter:
@@ -339,7 +363,19 @@ def build_kb(uid, pid=None):
 
     # ── فلتر الملازم: أضف زر الفلتر في أعلى القائمة (بمفرده) ─────────────
     if _show_mlz_filter_btn:
-        rows.insert(0, [KeyboardButton(BTN_MLZ_FILTER)])
+        _filter_label, _filter_emojis = get_mlz_filter_button_config()
+        _filter_display = keyboard_display_label(_filter_label, _filter_emojis)
+        _filter_kw = {}
+        if _filter_emojis:
+            _filter_kw = {
+                "api_kwargs": {
+                    "icon_custom_emoji_id": str(next(iter(_filter_emojis.values())))
+                }
+            }
+        rows.insert(0, [KeyboardButton(
+            _filter_display + _encode_bid(MLZ_FILTER_BUTTON_MARKER_ID),
+            **_filter_kw,
+        )])
 
     if admin and not btns:
         rows.append([KeyboardButton(BTN_PLUS)])
@@ -357,13 +393,22 @@ def build_kb(uid, pid=None):
         is_persistent=True,
     ) if rows else None
 
-def is_bot_button_text(text: str, pid=None) -> bool:
+def is_bot_button_text(text: str, pid=None, marker_bid=None) -> bool:
     if not text:
         return False
+    if marker_bid == MLZ_FILTER_BUTTON_MARKER_ID:
+        return True
     text = _strip_bid_markers(text)
     if text in SPECIAL_BTNS or _parse_plus(text) is not None:
         return True
+    if is_mlz_filter_button_press(text):
+        return True
     return any(b["label"] == text for b in get_buttons(pid))
+
+def kb_mlz_filter_button_admin():
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✏️ تغيير الاسم", callback_data="mfl_rename")
+    ]])
 
 # ── لوحات Inline ─────────────────────────────────────────────────
 def kb_manage(pid=None):

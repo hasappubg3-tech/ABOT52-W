@@ -448,7 +448,7 @@ async def on_message(update: Update, ctx):
     # (لا يشمل الرسائل التي تحتوي على وسائط، لأن بعض الحالات تنتظر ملفات)
     if (state
             and not (m.document or m.photo or m.video or m.audio or m.voice)
-            and is_bot_button_text(text, pid)):
+            and is_bot_button_text(text, pid, marker_bid)):
         ctx.user_data.pop("state", None)
         for _aux_key in (
             "comment_target_type", "comment_target_id",
@@ -457,7 +457,7 @@ async def on_message(update: Update, ctx):
             "phrase_edit_id", "capbtn_edit_mid", "capbtn_bid",
             "maintenance_bid", "qab_grade_row", "quiz_ai_bid",
             "ai_chat_bid", "mlz_new_btn_bid", "ses_create_pending",
-            "file_request_bid",
+            "file_request_bid", "mlz_filter_label_panel_id",
         ):
             ctx.user_data.pop(_aux_key, None)
         state = None
@@ -2129,6 +2129,47 @@ async def on_message(update: Update, ctx):
         await m.reply_text("✅ تم تغيير الاسم.", reply_markup=build_kb(uid, pid))
         return
 
+    if state == "wait_filter_button_label":
+        new_label = (m.text or "").strip()
+        if not new_label:
+            await m.reply_text("⚠️ أرسل اسماً غير فارغ.")
+            return
+        label_emojis = _extract_label_emojis(m)
+        from bot.keyboards import (
+            keyboard_display_label as _keyboard_display_label,
+            set_mlz_filter_button_config as _set_mlf_config,
+            kb_mlz_filter_button_admin as _kb_mlf_admin,
+        )
+        display_label = _keyboard_display_label(new_label, label_emojis).strip()
+        if not display_label:
+            await m.reply_text("⚠️ أضف نصاً إلى جانب الإيموجي المخصص.")
+            return
+        if len(display_label.encode("utf-16-le")) // 2 > 64:
+            await m.reply_text("⚠️ اسم الزر طويل جداً؛ اختصره إلى 64 حرفاً أو أقل.")
+            return
+
+        _set_mlf_config(new_label, label_emojis)
+        ctx.user_data.pop("state", None)
+        panel_mid = ctx.user_data.pop("mlz_filter_label_panel_id", None)
+        if panel_mid:
+            try:
+                await ctx.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=panel_mid,
+                    text=f"✅ تم تغيير اسم زر فلترة الملازم إلى:\n{new_label}",
+                    reply_markup=_kb_mlf_admin(),
+                )
+            except Exception:
+                await m.reply_text(
+                    f"✅ تم تغيير اسم زر فلترة الملازم إلى:\n{new_label}",
+                    reply_markup=_kb_mlf_admin(),
+                )
+        await m.reply_text(
+            "✅ تم تحديث لوحة الأزرار.",
+            reply_markup=build_kb(uid, pid),
+        )
+        return
+
     # ── انتظار رقم المشرف ─────────────────────────────────────────
     if state == "wait_admin_id":
         try: tid = int(text)
@@ -2598,26 +2639,40 @@ async def on_message(update: Update, ctx):
             return
 
     # ── فلتر البحث للملازم ──────────────────────────────────────────────
-    if text == BTN_MLZ_FILTER and not is_admin(uid) and not state:
-        from bot.keyboards import get_mlz_filter_options as _gfo, get_mlz_filter as _gmf
-        options = _gfo(pid)
-        active  = _gmf(uid, pid)
-        if not options:
-            await m.reply_text("⚠️ لا توجد أنواع ملفات في هذه المادة.")
+    from bot.keyboards import (
+        get_mlz_filter_options as _gfo,
+        get_mlz_filter as _gmf,
+        get_mlz_filter_button_config as _get_mlf_config,
+        is_mlz_filter_button_press as _is_mlf_press,
+        kb_mlz_filter_button_admin as _kb_mlf_admin,
+    )
+    if _is_mlf_press(text, marker_bid) and not state:
+        if has_permission(uid, "buttons") and not is_preview_mode(uid):
+            filter_label, _ = _get_mlf_config()
+            await m.reply_text(
+                f"⚙️ زر فلترة الملازم\n\nالاسم الحالي:\n{filter_label}",
+                reply_markup=_kb_mlf_admin()
+            )
             return
-        rows_f = []
-        for opt in options:
-            mark = " ✅" if opt == active else ""
-            rows_f.append([InlineKeyboardButton(f"{opt}{mark}", callback_data=f"mlzf_{pid}_{opt}")])
-        if active:
-            rows_f.append([InlineKeyboardButton("❌ إلغاء الفلتر", callback_data=f"mlzf_{pid}_reset")])
-        status_line = f"الفلتر الحالي: *{active}*" if active else "اختر نوع الملزمة الذي تريد عرضه:"
-        await m.reply_text(
-            f"🔍 *فلتر البحث*\n\n{status_line}",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(rows_f)
-        )
-        return
+        if not is_admin(uid):
+            options = _gfo(pid)
+            active  = _gmf(uid, pid)
+            if not options:
+                await m.reply_text("⚠️ لا توجد أنواع ملفات في هذه المادة.")
+                return
+            rows_f = []
+            for opt in options:
+                mark = " ✅" if opt == active else ""
+                rows_f.append([InlineKeyboardButton(f"{opt}{mark}", callback_data=f"mlzf_{pid}_{opt}")])
+            if active:
+                rows_f.append([InlineKeyboardButton("❌ إلغاء الفلتر", callback_data=f"mlzf_{pid}_reset")])
+            status_line = f"الفلتر الحالي: *{active}*" if active else "اختر نوع الملزمة الذي تريد عرضه:"
+            await m.reply_text(
+                f"🔍 *فلتر البحث*\n\n{status_line}",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(rows_f)
+            )
+            return
 
     # ── ضغط زر من القائمة ─────────────────────────────────────────
     # تنظيف علامات الحالة ✅/❌ (أزرار الامتحانات) و🔴🟡🟢 (أزرار الكويز الملوّنة)
