@@ -42,6 +42,8 @@ class FlexibleSearchTests(unittest.TestCase):
             {"id": 8, "button_id": 11, "type": "file",
              "file_id": "website-hidden", "website_hidden": True,
              "caption": "ملزمة الفيزياء للأستاذ جاسم الزبيدي"},
+            {"id": 9, "button_id": 11, "type": "text",
+             "content": "وصف يبقى في سجل البوت"},
         ]:
             self.db["content_items"].insert_one(item)
         for mocked in [
@@ -112,6 +114,9 @@ class FlexibleSearchTests(unittest.TestCase):
 
     def test_website_hidden_item_is_absent_from_all_public_entry_points(self):
         self.assertEqual(self.results("جاسم الزبيدي"), [])
+        self.assertNotIn(
+            "/note/11", {note["url"] for note in web._latest_notes(50)}
+        )
         self.assertEqual(web._independent_notes({
             "id": 11, "type": "content", "label": "ملزمة اختبار الإخفاء",
         }), [])

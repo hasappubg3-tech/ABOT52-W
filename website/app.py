@@ -231,12 +231,24 @@ def _children(pid):
 
 
 def _items(bid: int):
-    return [
+    items = [
         item for item in _col("content_items").find({"button_id": bid}).sort(
             [("ord", 1), ("id", 1)]
         )
         if not item.get("website_hidden")
     ]
+    has_visible_file = any(
+        item.get("type") in {"document", "file"} and item.get("file_id")
+        for item in items
+    )
+    if not has_visible_file and _col("content_items").find_one({
+        "button_id": bid,
+        "type": {"$in": ["document", "file"]},
+        "file_id": {"$exists": True, "$ne": None},
+        "website_hidden": True,
+    }):
+        return []
+    return items
 
 
 def _rating(bid: int) -> dict:
@@ -799,6 +811,7 @@ def _search_index_records() -> list:
         }
         items_by_button = {}
         hidden_item_buttons = set()
+        hidden_attachment_buttons = set()
         for item in _col("content_items").find(
             {"button_id": {"$exists": True, "$ne": None}},
             {"button_id": 1, "id": 1, "type": 1, "file_id": 1, "content": 1,
@@ -807,6 +820,8 @@ def _search_index_records() -> list:
         ).sort([("ord", 1), ("id", 1)]):
             if item.get("website_hidden"):
                 hidden_item_buttons.add(item.get("button_id"))
+                if item.get("type") in {"document", "file"} and item.get("file_id"):
+                    hidden_attachment_buttons.add(item.get("button_id"))
                 continue
             items_by_button.setdefault(item.get("button_id"), []).append(item)
 
@@ -820,6 +835,9 @@ def _search_index_records() -> list:
 
             items = items_by_button.get(btn["id"], [])
             if not items and btn["id"] in hidden_item_buttons:
+                continue
+            if (btn["id"] in hidden_attachment_buttons
+                    and not _file_items(items)):
                 continue
             label = str(btn.get("label") or "")
             normalized_label = _normalize_search_text(label)
