@@ -3,6 +3,8 @@ import time as _ktime
 from .shared import *
 from .data_access import get_item
 
+WEBSITE_SEARCH_URL = "https://alameer-iq.com/?open_search=1"
+
 # ── Cache للإيموجي المخصصة (لتجنب استعلام MongoDB في كل بناء keyboard) ──
 _emoji_cache: dict = {}   # {fallback_char: emoji_id}
 _emoji_cache_ts: float = 0.0
@@ -321,7 +323,14 @@ def build_kb(uid, pid=None):
             # زر يحتوي إيموجي عادي فقط → لا أيقونة مخصصة
             _btn_kw = {}
             _display_label = label
-        current_row.append(KeyboardButton(_display_label + _encode_bid(b['id']), **_btn_kw))
+        if b["id"] == 14433:
+            current_row.append(KeyboardButton(
+                _display_label,
+                web_app=WebAppInfo(url=WEBSITE_SEARCH_URL),
+                **_btn_kw,
+            ))
+        else:
+            current_row.append(KeyboardButton(_display_label + _encode_bid(b['id']), **_btn_kw))
         last_bid_in_row = b['id']
     if current_row:
         if admin and last_bid_in_row is not None:

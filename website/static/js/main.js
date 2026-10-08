@@ -23,6 +23,17 @@
     }
   });
 
+  if (new URLSearchParams(window.location.search).get('open_search') === '1') {
+    searchBar.classList.add('open');
+    window.Telegram?.WebApp?.ready();
+    window.Telegram?.WebApp?.expand();
+    const focusSearch = () => searchInput.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      focusSearch();
+      setTimeout(focusSearch, 200);
+    });
+  }
+
   // زر مسح
   clearBtn?.addEventListener('click', () => {
     searchInput.value = '';

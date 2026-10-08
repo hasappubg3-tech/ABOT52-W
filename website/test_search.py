@@ -129,6 +129,14 @@ class FlexibleSearchTests(unittest.TestCase):
             self.client.get("/attachment/website-hidden").status_code, 404
         )
 
+    def test_search_launch_parameter_opens_and_focuses_the_search_field(self):
+        response = self.client.get("/static/js/main.js")
+        script = response.get_data(as_text=True)
+        response.close()
+        self.assertIn("get('open_search') === '1'", script)
+        self.assertIn("searchBar.classList.add('open')", script)
+        self.assertIn("const focusSearch = () => searchInput.focus", script)
+
     def test_website_visibility_revision_invalidates_the_cached_search_index(self):
         first = web._search_index_records()
         self.db["website_index_state"].insert_one({

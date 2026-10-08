@@ -7,7 +7,7 @@ import zipfile
 import datetime
 import time as _time
 from collections import deque as _deque
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, LabeledPrice, MessageEntity
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, LabeledPrice, MessageEntity
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, PollAnswerHandler, PreCheckoutQueryHandler, filters
 from pymongo import MongoClient, ASCENDING
 from pymongo.collection import Collection
