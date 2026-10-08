@@ -24,7 +24,7 @@ async def cb_manage(update: Update, ctx):
             "phrase_edit_id", "capbtn_edit_mid", "capbtn_bid",
             "maintenance_bid", "qab_grade_row", "quiz_ai_bid",
             "ai_chat_bid", "mlz_new_btn_bid", "ses_create_pending",
-            "file_request_bid",
+            "file_request_bid", "mlz_filter_label_panel_id",
         ):
             ctx.user_data.pop(_aux_key, None)
 

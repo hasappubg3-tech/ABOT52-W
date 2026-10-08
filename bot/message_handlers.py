@@ -2141,8 +2141,14 @@ async def on_message(update: Update, ctx):
             kb_mlz_filter_button_admin as _kb_mlf_admin,
         )
         display_label = _keyboard_display_label(new_label, label_emojis).strip()
-        if not display_label:
-            await m.reply_text("⚠️ أضف نصاً إلى جانب الإيموجي المخصص.")
+        if (
+            not display_label
+            or (
+                display_label in SPECIAL_BTNS
+                and display_label != BTN_MLZ_FILTER
+            )
+        ):
+            await m.reply_text("⚠️ أرسل اسماً واضحاً، غير فارغ، ولا يطابق أحد أزرار التحكم.")
             return
         if len(display_label.encode("utf-16-le")) // 2 > 64:
             await m.reply_text("⚠️ اسم الزر طويل جداً؛ اختصره إلى 64 حرفاً أو أقل.")
