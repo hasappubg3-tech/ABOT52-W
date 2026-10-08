@@ -23,6 +23,8 @@ class FlexibleSearchTests(unittest.TestCase):
             {"id": 8, "parent_id": 1, "type": "menu", "label": "كروب الطلاب"},
             {"id": 9, "parent_id": 8, "type": "content", "label": "ملزمة حسين الهاشمي"},
             {"id": 10, "parent_id": 1, "type": "content", "label": "ملزمة كلاميات"},
+            {"id": 11, "parent_id": 1, "type": "content",
+             "label": "ملزمة اختبار الإخفاء على الموقع"},
         ]:
             self.db["buttons"].insert_one(button)
         for item in [
@@ -37,6 +39,9 @@ class FlexibleSearchTests(unittest.TestCase):
             {"id": 5, "button_id": 9, "type": "file", "file_id": "bot-only"},
             {"id": 7, "button_id": 10, "type": "file", "file_id": "incidental-word",
              "caption": "ملزمة كلاميات الكيمياء للاستاذ احمد"},
+            {"id": 8, "button_id": 11, "type": "file",
+             "file_id": "website-hidden", "website_hidden": True,
+             "caption": "ملزمة الفيزياء للأستاذ جاسم الزبيدي"},
         ]:
             self.db["content_items"].insert_one(item)
         for mocked in [
@@ -104,6 +109,28 @@ class FlexibleSearchTests(unittest.TestCase):
         urls = [r["url"] for r in self.results("حسين الهاشمي")]
         self.assertNotIn("/attachment/hidden", urls)
         self.assertNotIn("/attachment/bot-only", urls)
+
+    def test_website_hidden_item_is_absent_from_all_public_entry_points(self):
+        self.assertEqual(self.results("جاسم الزبيدي"), [])
+        self.assertEqual(web._independent_notes({
+            "id": 11, "type": "content", "label": "ملزمة اختبار الإخفاء",
+        }), [])
+        with patch.object(web, "_btn", return_value={
+            "id": 11, "type": "content", "label": "ملزمة اختبار الإخفاء",
+        }):
+            self.assertEqual(self.client.get("/note/11").status_code, 404)
+            self.assertEqual(self.client.get("/cat/11").status_code, 404)
+        self.assertEqual(
+            self.client.get("/attachment/website-hidden").status_code, 404
+        )
+
+    def test_website_visibility_revision_invalidates_the_cached_search_index(self):
+        first = web._search_index_records()
+        self.db["website_index_state"].insert_one({
+            "_id": "content_visibility", "revision": 1,
+        })
+        second = web._search_index_records()
+        self.assertIsNot(first, second)
 
     def test_ancestor_grade_is_searchable(self):
         self.assertIn("/attachment/physics", [

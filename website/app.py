@@ -118,7 +118,11 @@ _PDF_THUMB_TTL  = 86400   # يوم كامل
 _file_url_cache: dict = {}
 _FILE_URL_TTL = 3600  # ساعة واحدة
 _SEARCH_INDEX_TTL = 30
-_search_index_cache = {"expires": 0.0, "records": None}
+_search_index_cache = {
+    "expires": 0.0,
+    "records": None,
+    "visibility_revision": None,
+}
 _search_index_lock = Lock()
 
 
@@ -227,7 +231,12 @@ def _children(pid):
 
 
 def _items(bid: int):
-    return list(_col("content_items").find({"button_id": bid}).sort([("ord", 1), ("id", 1)]))
+    return [
+        item for item in _col("content_items").find({"button_id": bid}).sort(
+            [("ord", 1), ("id", 1)]
+        )
+        if not item.get("website_hidden")
+    ]
 
 
 def _rating(bid: int) -> dict:
@@ -527,6 +536,8 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
     """عرض ملفات زر البوت كبطاقات مستقلة في الموقع دون تغيير بيانات البوت."""
     if items is None:
         items = _items(btn["id"])
+    if not items:
+        return []
     files = _file_items(items)
     if not files:
         return [{**_enrich(btn), "is_attachment": False, "url": f"/note/{btn['id']}"}]
@@ -573,6 +584,8 @@ def _find_visible_attachment(file_id: str) -> dict | None:
         "type": {"$in": ["document", "file"]},
     })
     for item in candidates:
+        if item.get("website_hidden"):
+            continue
         bid = item.get("button_id")
         button = _col("buttons").find_one({
             "id": bid, "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
@@ -753,16 +766,27 @@ def _search_item_text(item: dict) -> str:
     return " ".join(str(item.get(field) or "") for field in fields)
 
 
+def _website_visibility_revision() -> int:
+    state = _col("website_index_state").find_one({"_id": "content_visibility"})
+    return int(state.get("revision", 0)) if state else 0
+
+
 def _search_index_records() -> list:
     """يحمّل فهرس البحث مرة واحدة ويحدّثه دورياً لتبقى الطلبات الحية سريعة."""
     global _search_index_cache
     now = time.monotonic()
-    if _search_index_cache["records"] is not None and now < _search_index_cache["expires"]:
+    revision = _website_visibility_revision()
+    if (_search_index_cache["records"] is not None
+            and now < _search_index_cache["expires"]
+            and _search_index_cache.get("visibility_revision") == revision):
         return _search_index_cache["records"]
 
     with _search_index_lock:
         now = time.monotonic()
-        if _search_index_cache["records"] is not None and now < _search_index_cache["expires"]:
+        revision = _website_visibility_revision()
+        if (_search_index_cache["records"] is not None
+                and now < _search_index_cache["expires"]
+                and _search_index_cache.get("visibility_revision") == revision):
             return _search_index_cache["records"]
 
         visible_buttons = {
@@ -774,12 +798,16 @@ def _search_index_records() -> list:
             )
         }
         items_by_button = {}
+        hidden_item_buttons = set()
         for item in _col("content_items").find(
             {"button_id": {"$exists": True, "$ne": None}},
             {"button_id": 1, "id": 1, "type": 1, "file_id": 1, "content": 1,
              "caption": 1, "file_name": 1, "filename": 1, "name": 1, "ord": 1,
-             "created_at": 1, "channel_msg_id": 1, "_id": 1},
+             "created_at": 1, "channel_msg_id": 1, "website_hidden": 1, "_id": 1},
         ).sort([("ord", 1), ("id", 1)]):
+            if item.get("website_hidden"):
+                hidden_item_buttons.add(item.get("button_id"))
+                continue
             items_by_button.setdefault(item.get("button_id"), []).append(item)
 
         allowed_terms = tuple(_normalize_search_text(word) for word in _CONTENT_WHITELIST)
@@ -791,6 +819,8 @@ def _search_index_records() -> list:
                 continue
 
             items = items_by_button.get(btn["id"], [])
+            if not items and btn["id"] in hidden_item_buttons:
+                continue
             label = str(btn.get("label") or "")
             normalized_label = _normalize_search_text(label)
             normalized_item_texts = [
@@ -826,6 +856,7 @@ def _search_index_records() -> list:
         _search_index_cache = {
             "expires": time.monotonic() + _SEARCH_INDEX_TTL,
             "records": records,
+            "visibility_revision": revision,
         }
         return records
 
@@ -1101,7 +1132,14 @@ def create_app() -> Flask:
         if not btn:
             abort(404)
         # الروابط القديمة لحزمة ملفات تعرض بطاقات مستقلة، لا صفحة ملزمة تجمعها.
-        children = [btn] if btn.get("type") == "content" else _children(bid)
+        direct_items = None
+        if btn.get("type") == "content":
+            direct_items = _items(bid)
+            if not direct_items and _col("content_items").find_one({"button_id": bid}):
+                abort(404)
+            children = [btn]
+        else:
+            children = _children(bid)
         if btn.get("type") == "compound" and btn.get("sort_by_year", 0):
             children = sorted(children, key=_compound_sort_key)
         # نُطبّق فلتر القوائم فقط إذا كنا مباشرةً داخل صف دراسي (parent_id=None)
@@ -1116,7 +1154,8 @@ def create_app() -> Flask:
         for child in children:
             if child.get("type") != "content":
                 continue
-            for card in _independent_notes(child):
+            child_items = direct_items if child["id"] == bid else None
+            for card in _independent_notes(child, child_items):
                 file_id = card.get("file_id")
                 if file_id and file_id in seen_files:
                     continue
@@ -1152,6 +1191,8 @@ def create_app() -> Flask:
         if not btn or btn.get("type") != "content":
             abort(404)
         items         = _items(bid)
+        if not items and _col("content_items").find_one({"button_id": bid}):
+            abort(404)
         if _file_items(items):
             notes = _independent_notes(btn, items)
             if len(notes) == 1:

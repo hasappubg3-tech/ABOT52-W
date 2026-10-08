@@ -856,6 +856,32 @@ def upd_items_desc(bid, new_desc, _sync=True):
 def get_item(iid):
     return _d(_col("content_items").find_one({"id": iid}))
 
+def set_item_website_hidden(iid, hidden, _sync=True):
+    """يخفي عنصر الملزمة عن الموقع فقط، مع إبقائه متاحاً في البوت."""
+    item = get_item(iid)
+    if not item:
+        return False
+
+    if hidden:
+        _col("content_items").update_one(
+            {"id": iid}, {"$set": {"website_hidden": True}}
+        )
+    else:
+        _col("content_items").update_one(
+            {"id": iid}, {"$unset": {"website_hidden": ""}}
+        )
+
+    if _sync:
+        twin_iid = get_item_twin(iid)
+        if twin_iid is not None:
+            set_item_website_hidden(twin_iid, hidden, _sync=False)
+        _col("website_index_state").update_one(
+            {"_id": "content_visibility"},
+            {"$inc": {"revision": 1}},
+            upsert=True,
+        )
+    return True
+
 # ── تقييم العناصر ────────────────────────────────────────────────
 def get_item_rating_summary(iid: int) -> dict:
     iid = canonical_item_id(iid)

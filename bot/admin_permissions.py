@@ -13,6 +13,8 @@ ADMIN_PERMISSIONS = {
 
 
 def admin_callback_permission(data, *, admin_section=False):
+    if data.startswith("ci_website_toggle_"):
+        return "buttons"
     if data.startswith("mlz_ed_"):
         return "buttons"
     if data.startswith("mlz_"):

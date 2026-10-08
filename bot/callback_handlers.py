@@ -3310,6 +3310,25 @@ async def cb_manage(update: Update, ctx):
                                      bot=ctx.bot)
         return
 
+    # ── إخفاء / إظهار الملزمة على الموقع فقط ─────────────────────
+    if d.startswith("ci_website_toggle_"):
+        iid = int(d[len("ci_website_toggle_"):])
+        item = get_item(iid)
+        if not item:
+            await q.answer("❌ الملزمة غير موجودة.", show_alert=True)
+            return
+        hidden = not bool(item.get("website_hidden"))
+        if not set_item_website_hidden(iid, hidden):
+            await q.answer("❌ تعذر تحديث ظهور الملزمة.", show_alert=True)
+            return
+        await q.edit_message_reply_markup(reply_markup=kb_item_actions(iid))
+        confirmation = (
+            "✅ أُخفيت الملزمة من الموقع، وما زالت متاحة في البوت."
+            if hidden else "✅ أُظهرت الملزمة في الموقع."
+        )
+        await q.answer(confirmation, show_alert=False)
+        return
+
     # ── تغيير وصف عنصر ───────────────────────────────────────────
     if d.startswith("ci_edit_"):
         iid = int(d[8:])

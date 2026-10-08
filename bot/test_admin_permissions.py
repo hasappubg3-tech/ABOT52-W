@@ -155,6 +155,7 @@ class PermissionTests(PermissionFixture, unittest.TestCase):
             ("st_broadcast_confirm", "broadcast"), ("st_backup_dl", "backups"),
             ("st_back", "settings_menu"), ("don_thanks_set", "bot_settings"),
             ("exg_add_topic_3", "buttons"), ("st_ai_settings", "bot_settings"),
+            ("ci_website_toggle_3", "buttons"),
         ):
             self.assertEqual(admin_callback_permission(value), expected)
         self.assertIsNone(admin_callback_permission("rate_3"))

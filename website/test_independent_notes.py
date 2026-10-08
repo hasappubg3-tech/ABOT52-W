@@ -331,7 +331,11 @@ class IndependentNotesTests(unittest.TestCase):
             if all(row.get(key) == value for key, value in query.items()
                    if not isinstance(value, dict))
         ])
-        database = {"buttons": button_collection, "content_items": item_collection}
+        database = {
+            "buttons": button_collection,
+            "content_items": item_collection,
+            "website_index_state": Mock(find_one=Mock(return_value=None)),
+        }
 
         with patch.object(web, "_col", side_effect=lambda name: database[name]), \
                 patch.object(web, "_search_index_records", REAL_SEARCH_INDEX), \

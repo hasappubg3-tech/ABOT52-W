@@ -1,6 +1,7 @@
 import re as _re
 import time as _ktime
 from .shared import *
+from .data_access import get_item
 
 # ── Cache للإيموجي المخصصة (لتجنب استعلام MongoDB في كل بناء keyboard) ──
 _emoji_cache: dict = {}   # {fallback_char: emoji_id}
@@ -966,10 +967,18 @@ def kb_pomodoro_settings(uid: int, show_modes: bool = False):
 
 def kb_item_actions(iid):
     """أزرار تحت كل عنصر محتوى عند العرض."""
-    return InlineKeyboardMarkup([[
+    rows = [[
         InlineKeyboardButton("✏️ تغيير الوصف", callback_data=f"ci_edit_{iid}"),
         InlineKeyboardButton("🗑 حذف",          callback_data=f"ci_del_{iid}"),
-    ]])
+    ]]
+    item = get_item(iid)
+    if item and item.get("type") in {"document", "file"} and item.get("file_id"):
+        hidden = bool(item.get("website_hidden"))
+        label = "👁 إظهار الملزمة في الموقع" if hidden else "🙈 إخفاء الملزمة من الموقع"
+        rows.append([InlineKeyboardButton(
+            label, callback_data=f"ci_website_toggle_{iid}"
+        )])
+    return InlineKeyboardMarkup(rows)
 
 def kb_admins_inline():
     rows = []
