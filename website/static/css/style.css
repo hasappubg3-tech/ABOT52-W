@@ -155,6 +155,9 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   background: linear-gradient(180deg, #fff 0%, #FBF7EE 100%);
   border-bottom: 1px solid var(--gold-border);
 }
+.home-search-toggle { display: none; }
+.navbar.home-search-collapsed .home-search-toggle { display: flex; }
+.navbar.home-search-collapsed .search-bar--persistent { display: none; }
 .search-bar--persistent #search-input {
   min-height: 52px;
   border: 2px solid var(--gold);

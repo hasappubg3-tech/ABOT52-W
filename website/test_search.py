@@ -137,13 +137,14 @@ class FlexibleSearchTests(unittest.TestCase):
         self.assertIn("searchBar.classList.add('open')", script)
         self.assertIn("const focusSearch = () => searchInput.focus", script)
 
-    def test_homepage_search_is_always_visible_without_a_search_icon(self):
+    def test_homepage_search_starts_visible_with_a_scroll_only_icon(self):
         response = self.client.get("/")
         html = response.get_data(as_text=True)
         response.close()
         self.assertIn('class="search-bar search-bar--persistent"', html)
         self.assertIn('id="search-input"', html)
-        self.assertNotIn('id="search-toggle"', html)
+        self.assertIn('class="icon-btn home-search-toggle"', html)
+        self.assertIn('aria-expanded="true"', html)
 
     def test_inner_pages_keep_the_collapsed_search_toggle(self):
         response = self.client.get("/search")

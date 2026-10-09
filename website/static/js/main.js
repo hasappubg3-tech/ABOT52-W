@@ -13,9 +13,55 @@
 
   if (!searchBar || !searchInput) return;
 
-  // فتح/إغلاق البحث المنسدل في الصفحات الداخلية؛ يبقى ظاهراً في الرئيسية.
+  const navbar = searchBar.closest('.navbar');
+  let lastScrollY = Math.max(0, window.scrollY);
+  let settlingSearchLayout = false;
+
+  function setSearchCollapsed(collapsed) {
+    if (!isPersistent || !navbar) return;
+    if (navbar.classList.contains('home-search-collapsed') === collapsed) return;
+    navbar.classList.toggle('home-search-collapsed', collapsed);
+    toggleBtn?.setAttribute('aria-expanded', String(!collapsed));
+    if (collapsed) clearResults();
+    // تجاهل تغير موضع الصفحة الناتج عن تغير ارتفاع الشريط نفسه.
+    settlingSearchLayout = true;
+    requestAnimationFrame(() => {
+      lastScrollY = Math.max(0, window.scrollY);
+      settlingSearchLayout = false;
+    });
+  }
+
+  if (isPersistent) {
+    window.addEventListener('scroll', () => {
+      if (settlingSearchLayout) return;
+      const currentY = Math.max(0, window.scrollY);
+      if (searchBar.contains(document.activeElement)) {
+        lastScrollY = currentY;
+        return;
+      }
+      const delta = currentY - lastScrollY;
+      if (currentY <= 40) {
+        setSearchCollapsed(false);
+      } else if (Math.abs(delta) < 12) {
+        return;
+      } else if (delta > 0 && currentY > 120) {
+        setSearchCollapsed(true);
+      } else if (delta < 0) {
+        setSearchCollapsed(false);
+      }
+      lastScrollY = currentY;
+    }, { passive: true });
+  }
+
+  // الأيقونة تعيد فتح بحث الرئيسية، وتفتح/تغلق البحث في الصفحات الداخلية.
   toggleBtn?.addEventListener('click', () => {
+    if (isPersistent) {
+      setSearchCollapsed(false);
+      searchInput.focus();
+      return;
+    }
     const isOpen = searchBar.classList.toggle('open');
+    toggleBtn.setAttribute('aria-expanded', String(isOpen));
     if (isOpen) {
       searchInput.focus();
     } else {
@@ -71,6 +117,7 @@
     }
     if (e.key === 'Escape') {
       if (!isPersistent) searchBar.classList.remove('open');
+      if (!isPersistent) toggleBtn?.setAttribute('aria-expanded', 'false');
       clearResults();
     }
   });
@@ -107,6 +154,7 @@
   document.addEventListener('click', (e) => {
     if (searchBar.contains(e.target) || toggleBtn?.contains(e.target)) return;
     if (!isPersistent) searchBar.classList.remove('open');
+    if (!isPersistent) toggleBtn?.setAttribute('aria-expanded', 'false');
     clearResults();
   });
 })();

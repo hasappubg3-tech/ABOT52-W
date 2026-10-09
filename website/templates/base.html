@@ -47,13 +47,11 @@
     </a>
 
     <div class="nav-actions">
-      {% if not persistent_search %}
-      <button class="icon-btn" id="search-toggle" title="بحث" aria-label="فتح البحث">
+      <button class="icon-btn{% if persistent_search %} home-search-toggle{% endif %}" id="search-toggle" title="بحث" aria-label="فتح البحث" aria-controls="search-bar" aria-expanded="{{ 'true' if persistent_search else 'false' }}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
       </button>
-      {% endif %}
       <a href="https://t.me/{{ bot_username }}" target="_blank" class="bot-btn">
         <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
           <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248l-2.01 9.469c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12L7.48 13.99l-2.95-.924c-.642-.202-.655-.642.135-.953l11.52-4.44c.535-.194 1.002.13.377.575z"/>
@@ -63,7 +61,7 @@
     </div>
   </div>
 
-  <!-- يظهر البحث دائماً في الصفحة الرئيسية، وينفتح من الأيقونة في بقية الصفحات -->
+  <!-- بحث الرئيسية يتقلص إلى أيقونة عند النزول ويعود عند الصعود -->
   <div class="search-bar{% if persistent_search %} search-bar--persistent{% endif %}" id="search-bar">
     <div class="search-inner">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon">
