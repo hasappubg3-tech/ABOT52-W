@@ -181,6 +181,14 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
               border-color .24s ease;
   will-change: height, opacity, transform;
 }
+.navbar.home-search-overlay .search-bar--persistent {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  box-shadow: 0 8px 18px rgba(0,0,0,.10);
+}
 .navbar.home-search-collapsed .search-bar--persistent {
   height: 0;
   padding-top: 0;

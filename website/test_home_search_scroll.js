@@ -60,17 +60,24 @@ function scroll(y) {
 function collapsed() {
   return navbar.classList.contains('home-search-collapsed');
 }
+function overlay() {
+  return navbar.classList.contains('home-search-overlay');
+}
 
 assert.equal(collapsed(), false, 'Starts expanded');
+assert.equal(overlay(), false, 'Starts in normal page flow');
 scroll(90);
 assert.equal(collapsed(), false, 'Does not collapse near the top');
 scroll(200);
 assert.equal(collapsed(), true, 'Downward scrolling collapses search');
+assert.equal(overlay(), true, 'Collapsed search is removed from page flow');
 assert.equal(toggle.attributes['aria-expanded'], 'false');
 scroll(195);
 assert.equal(collapsed(), true, 'Small movements do not flicker');
 scroll(165);
 assert.equal(collapsed(), false, 'Upward scrolling restores search');
+assert.equal(overlay(), true, 'Scrolling up expands over content without pushing it');
+assert.equal(bar.style.height, 'auto', 'Expanded height returns to content-driven sizing');
 scroll(250);
 toggle.listeners.click();
 while (frames.length) frames.shift()();
@@ -84,4 +91,5 @@ scroll(500);
 assert.equal(collapsed(), true);
 scroll(0);
 assert.equal(collapsed(), false, 'Returning to the top restores search');
+assert.equal(overlay(), false, 'At the top, search returns to normal page layout');
 console.log('Homepage search scroll checks passed');

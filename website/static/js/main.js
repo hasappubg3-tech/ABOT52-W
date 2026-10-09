@@ -18,12 +18,19 @@
   let searchAnimating = false;
   let finishAnimationTimer;
 
+  function setSearchOverlay(enabled) {
+    if (isPersistent && navbar) {
+      navbar.classList.toggle('home-search-overlay', enabled);
+    }
+  }
+
   function finishSearchAnimation() {
     if (!searchAnimating) return;
     searchAnimating = false;
     clearTimeout(finishAnimationTimer);
     const collapsed = navbar.classList.contains('home-search-collapsed');
     searchBar.style.height = collapsed ? '0px' : 'auto';
+    setSearchOverlay(window.scrollY > 0);
     lastScrollY = Math.max(0, window.scrollY);
   }
 
@@ -42,6 +49,8 @@
       clearResults();
     } else {
       searchBar.style.height = '0px';
+      // أثناء التمرير يظهر الشريط فوق المحتوى حتى لا يدفعه إلى الأسفل.
+      setSearchOverlay(window.scrollY > 0);
       navbar.classList.remove('home-search-collapsed');
       const expandedHeight = searchBar.scrollHeight;
       requestAnimationFrame(() => {
@@ -69,6 +78,7 @@
       const delta = currentY - lastScrollY;
       if (currentY <= 40) {
         setSearchCollapsed(false);
+        if (currentY === 0 && !searchAnimating) setSearchOverlay(false);
       } else if (Math.abs(delta) < 12) {
         return;
       } else if (delta > 0 && currentY > 120) {
