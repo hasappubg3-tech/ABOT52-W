@@ -2712,17 +2712,10 @@ async def on_message(update: Update, ctx):
     if not matched:
         # النص لا يطابق أي زر في القائمة الحالية
         # → نعيد إظهار الكيبورد في حال كان مخفياً ونتجاهل النص
-        # إرسال اسم القسم بإيموجي متحرك عبر Pyrogram إن أمكن
-        _nav_label = b['label'] if 'b' in dir() and b else '.'
-        _nav_em = b.get('label_emojis') if 'b' in dir() and b else {}
-        try:
-            from bot.pyro_sender import send_animated as _sa
-            _nav_kb = build_kb(uid, pid)
-            _nav_sent = await _sa(m.chat.id, _nav_label, reply_markup=_nav_kb, emoji_map=_nav_em)
-            if not _nav_sent:
-                await m.reply_text('.', reply_markup=_nav_kb)
-        except Exception:
-            await m.reply_text('.', reply_markup=build_kb(uid, pid))
+        await m.reply_text(
+            "💬 ما فهمت رسالتك. استخدم أزرار القائمة للمتابعة:",
+            reply_markup=build_kb(uid, pid),
+        )
         return
 
     b = matched

@@ -11,4 +11,4 @@
 - [Automatic material-title style](mlz-label-style.md) — type + year + selected custom emoji once at the end; no pin-wrapped names.
 - [Telegram file verification](telegram-file-verification.md) — getFile download-size errors do not mean a stored document cannot be delivered.
 - [Mini App keyboard focus](mini-app-keyboard-focus.md) — opening and focusing search does not guarantee that Telegram shows the phone keyboard.
-- [Telegram reply keyboard visibility](telegram-reply-keyboard-visibility.md) — keep the student control keyboard non-persistent; use on-demand restoration unless the user approves another option.
+- [Telegram reply keyboard visibility](telegram-reply-keyboard-visibility.md) — keep controls non-persistent; unmatched student text restores the current menu without moving the student elsewhere.
