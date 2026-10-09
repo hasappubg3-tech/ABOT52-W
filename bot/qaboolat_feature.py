@@ -2,6 +2,7 @@
 ميزة حاسبة القبول الجامعي
 يقرأ البيانات من data/qaboolat.csv ويُرجع قائمة الكليات المتاحة بحسب المعدل والفرع.
 """
+import asyncio
 import csv
 import os
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -91,7 +92,7 @@ def format_results(branch: str, grade: float, results: list) -> list[str]:
     chunks = []
     current_lines = [header]
     current_len = len(header.encode("utf-16-le")) // 2
-    LIMIT = 3500
+    LIMIT = 3800
 
     def _line_cost(line: str) -> int:
         # سطر جديد قبل كل سطر جديد عند ضمه إلى الرسالة الحالية.
@@ -131,6 +132,14 @@ def format_results(branch: str, grade: float, results: list) -> list[str]:
         chunks.append("\n".join(current_lines))
 
     return chunks
+
+
+async def send_result_messages(target, messages: list[str]):
+    """يرسل كل أجزاء النتيجة بالتتابع مع فاصل لتجنب تقييد الإرسال."""
+    for index, message in enumerate(messages):
+        if index:
+            await asyncio.sleep(1.1)
+        await target.reply_text(message, parse_mode="Markdown")
 
 
 # ── لوحة اختيار الفرع ────────────────────────────────────────────

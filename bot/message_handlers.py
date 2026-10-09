@@ -670,11 +670,14 @@ async def on_message(update: Update, ctx):
                 ctx.user_data["qab_branch"] = branch
             await m.reply_text("⚠️ أرسل معدلاً صحيحاً بين 0 و105 (مثال: 87.50)")
             return
-        from bot.qaboolat_feature import search_results, format_results
+        from bot.qaboolat_feature import (
+            search_results,
+            format_results,
+            send_result_messages,
+        )
         results = search_results(branch or "علمي", grade)
         messages = format_results(branch or "علمي", grade, results)
-        for msg in messages:
-            await m.reply_text(msg, parse_mode="Markdown")
+        await send_result_messages(m, messages)
         return
 
     # ── المستخدم في محادثة نشطة مع المشرف ────────────────────────────
