@@ -87,8 +87,7 @@ _GRADE_LEVELS = (
     r'(?:السادس|سادس|الخامس|خامس|الرابع|رابع|الثالث|ثالث|الثاني|ثاني|'
     r'الأولى|الاولى|أولى|اولى|الأول|الاول|أول|اول|'
     r'السابعة|السابع|سابع|الثامنة|الثامن|ثامن|'
-    r'التاسعة|التاسع|تاسع|العاشرة|العاشر|عاشر|'
-    r'[١-٩]|[1-9])'
+    r'التاسعة|التاسع|تاسع|العاشرة|العاشر|عاشر)'
 )
 _GRADE_TYPES  = (
     r'(?:علمي|العلمي|أدبي|الادبي|الأدبي|ادبي|'
@@ -99,11 +98,6 @@ _GRADE_TYPES  = (
     r'ثانوي|الثانوي|ثانوية|الثانوية|'
     r'تطبيقي|التطبيقي|تطبيقية|التطبيقية|مهني|المهني)'
 )
-_GRADE_NUMBER_WORDS = {
-    'اول', 'ثاني', 'ثالث', 'رابع', 'خامس', 'سادس',
-    'سابع', 'ثامن', 'تاسع', 'عاشر',
-    *[str(number) for number in range(1, 13)],
-}
 _GRADE_QUALIFIER_WORDS = {
     'علمي', 'ادبي', 'ابتدائي', 'متوسط', 'اعدادي', 'ثانوي', 'تطبيقي', 'مهني',
 }
@@ -144,10 +138,10 @@ def _extract_info_local(text: str) -> dict:
         result['year'] = yr.group(1)
 
     # ── الصف: اقبل المرحلة الابتدائية/المتوسطة أيضاً للصفوف 4–6 ──
-    grade_m = _re.search(
-        _GRADE_LEVELS + r'(?:\s+' + _GRADE_TYPES + r')?',
-        cleaned
-    )
+    # Prefer an explicitly qualified grade over an ordinal used for a file part.
+    grade_m = _re.search(_GRADE_LEVELS + r'\s+' + _GRADE_TYPES, cleaned)
+    if not grade_m:
+        grade_m = _re.search(_GRADE_LEVELS, cleaned)
     if grade_m and _is_complete_grade(grade_m.group(0)):
         result['grade'] = grade_m.group(0).strip()
 
@@ -345,7 +339,7 @@ def _grade_menu_entries() -> list[dict]:
                         if not child.get('deleted') and child.get('type') == 'menu']
             mlz_folder = _mlz_folder_from_children(children)
             if mlz_folder:
-                if _is_complete_grade(' '.join(path_labels)):
+                if _grade_terms(' '.join(path_labels)) & _GRADE_LEVEL_TERMS:
                     entries.append({
                         'button': button,
                         'mlz_button': mlz_folder,
@@ -372,6 +366,8 @@ def _find_grade_menu(grade: str, selected_id=None) -> dict | None:
                if query_terms <= _grade_terms(' '.join(entry['path_labels']))]
     if len(matches) == 1:
         return matches[0]
+    if query_terms <= _GRADE_LEVEL_TERMS:
+        return None
 
     # A plain "الأول" can exist in both primary and middle school; never guess.
     exact_path = [entry for entry in matches
@@ -414,26 +410,17 @@ def _apply_emoji_wrap(name: str, prefix: str, suffix: str) -> str:
     return f"{prefix}{name.strip()}{suffix}" if (prefix or suffix) else name.strip()
 
 # ── البحث عن المسار وإنشاء ما يلزم (مع تطبيق نمط الرموز) ────────
-def find_or_build_mlz_path(grade: str, subject: str, teacher: str):
+def find_or_build_mlz_path(grade: str, subject: str, teacher: str, grade_btn_id=None):
     """
-    يبحث ويُنشئ المسار: الصف → الملازم → المادة → المدرس (مدمج)
+    يبحث عن الصف في القائمة الرئيسية أو داخل أقسام المراحل.
+    المسار: قسم المرحلة (إن وجد) → الصف → الملازم → المادة → المدرس.
     يُرجع: (grade_btn, mlz_btn, subject_btn, teacher_btn)
     """
-    root_btns = [b for b in get_buttons(None) if not b.get('deleted')]
-    grade_btn = _fuzzy_match(grade, root_btns)
-    if not grade_btn:
+    entry = _find_grade_menu(grade, selected_id=grade_btn_id)
+    if not entry:
         return None, None, None, None
-
-    grade_children = get_buttons(grade_btn['id'])
-    mlz_keywords = ['ملزم', 'ملازم', 'ملزمه', 'ملازمه', 'ملازمات', 'ملزمات']
-    mlz_btn = None
-    for b in grade_children:
-        lbl_n = _norm(b['label'])
-        if any(kw in lbl_n for kw in mlz_keywords):
-            mlz_btn = b
-            break
-    if not mlz_btn:
-        return grade_btn, None, None, None
+    grade_btn = {**entry['button'], '_grade_path_labels': entry['path_labels']}
+    mlz_btn = entry['mlz_button']
 
     mlz_children = [b for b in get_buttons(mlz_btn['id']) if b['type'] == 'menu']
     subject_btn = _fuzzy_match(subject, mlz_children)
@@ -498,7 +485,7 @@ def _build_btn_name(mlz_type, year, label_emojis):
 def _clear_mlz(ctx):
     for key in [
         'mlz_file_type', 'mlz_file_id', 'mlz_subject', 'mlz_teacher',
-        'mlz_grade', 'mlz_year', 'mlz_part', 'mlz_type', 'mlz_desc', 'mlz_path_str',
+        'mlz_grade', 'mlz_grade_btn_id', 'mlz_year', 'mlz_part', 'mlz_type', 'mlz_desc', 'mlz_path_str',
         'mlz_panel_mid', 'mlz_panel_chat_id', 'mlz_picker_mid', 'mlz_custom_line',
         'mlz_actor_id', 'mlz_label_emojis',
     ]:
@@ -562,12 +549,15 @@ async def _refresh_mlz_panel(bot, ctx):
 
 # ── عرض لوحة اختيار الصف ─────────────────────────────────────────
 async def show_grade_picker(q, ctx):
-    """يعرض أزرار الصفوف الموجودة كخيارات جاهزة."""
-    root_btns = [b for b in get_buttons(None) if not b.get('deleted') and b.get('type') == 'menu']
+    """يعرض الصفوف الموجودة داخل جميع أقسام المراحل."""
+    entries = _grade_menu_entries()
     rows = []
     chunk = []
-    for b in root_btns[:14]:
-        chunk.append(InlineKeyboardButton(b['label'], callback_data=f"mlz_g_{b['id']}"))
+    for entry in entries:
+        btn = entry['button']
+        chunk.append(InlineKeyboardButton(
+            _grade_picker_label(entry), callback_data=f"mlz_g_{btn['id']}"
+        ))
         if len(chunk) == 2:
             rows.append(chunk)
             chunk = []
@@ -710,7 +700,7 @@ async def start_mlz_flow(m, ctx, uid, chat_id) -> bool:
     if not file_type or file_type == 'text':
         return False
     ctx.user_data['mlz_actor_id'] = uid
-
+    ctx.user_data.pop('mlz_grade_btn_id', None)
     ctx.user_data['mlz_file_type'] = file_type
     ctx.user_data['mlz_file_id']   = file_id
 
@@ -761,22 +751,18 @@ async def after_mlz_confirm(q, ctx, uid, chat_id):
         return
 
     # التحقق من صحة الصف قبل المتابعة
-    root_btns = [b for b in get_buttons(None) if not b.get('deleted')]
-    grade_btn = _fuzzy_match(grade, root_btns)
-    if not grade_btn:
-        await q.answer(f"⚠️ لم أجد صفاً باسم «{grade}» — عدّله من زر ✏️", show_alert=True)
+    grade_entry = _find_grade_menu(
+        grade, selected_id=ctx.user_data.get('mlz_grade_btn_id')
+    )
+    if not grade_entry:
+        await q.answer(
+            f"⚠️ لم أتمكن من تحديد الصف «{grade}» بشكل واضح. اختره من زر تعديل الصف.",
+            show_alert=True
+        )
         return
-
-    grade_children = get_buttons(grade_btn['id'])
-    _mlz_kw = ['ملزم', 'ملازم', 'ملزمه', 'ملازمه', 'ملازمات', 'ملزمات']
-    mlz_btn = None
-    for b in grade_children:
-        if any(kw in _norm(b['label']) for kw in _mlz_kw):
-            mlz_btn = b
-            break
-    if not mlz_btn:
-        await q.answer(f"⚠️ لم أجد زر الملازم داخل «{grade_btn['label']}»", show_alert=True)
-        return
+    grade_btn = grade_entry['button']
+    mlz_btn = grade_entry['mlz_button']
+    ctx.user_data['mlz_grade_btn_id'] = grade_btn['id']
 
     # جلب أزرار المواد الموجودة داخل زر الملازم
     mlz_subject_btns = [b for b in get_buttons(mlz_btn['id'])
@@ -866,6 +852,7 @@ async def after_mlz_edit_field(q, ctx, field: str):
         ctx.user_data['state'] = 'wait_mlz_year'
         await q.message.reply_text("📅 أرسل *سنة الإصدار* (مثال: 2025):", parse_mode='Markdown')
     elif field == 'g_text':
+        ctx.user_data.pop('mlz_grade_btn_id', None)
         ctx.user_data['state'] = 'wait_mlz_grade'
         await q.message.reply_text("🏫 أرسل *اسم الصف* كما هو مكتوب في البوت:", parse_mode='Markdown')
     elif field == 'p':
@@ -876,12 +863,13 @@ async def after_mlz_edit_field(q, ctx, field: str):
 # ── callback: اختيار صف من اللوحة ───────────────────────────────
 async def after_mlz_grade_pick(q, ctx, bid: int):
     """يحفظ الصف المختار من اللوحة."""
-    btn = get_btn(bid)
-    if not btn:
-        await q.answer("⚠️ الزر غير موجود.", show_alert=True)
+    entry = _find_grade_menu('', selected_id=bid)
+    if not entry:
+        await q.answer("⚠️ هذا الزر لا يحتوي صفاً له قسم ملازم.", show_alert=True)
         return
-    ctx.user_data['mlz_grade'] = btn['label']
-    await q.answer(f"✅ {btn['label']}")
+    ctx.user_data['mlz_grade_btn_id'] = bid
+    ctx.user_data['mlz_grade'] = ' › '.join(entry['path_labels'])
+    await q.answer(f"✅ {entry['button']['label']}")
     await _delete_picker(ctx.bot, ctx, q.message.chat_id)
     await _refresh_mlz_panel(ctx.bot, ctx)
 
@@ -917,7 +905,9 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
 
     wait_msg = await m.reply_text("⏳ جاري الإنشاء وإضافة الملف...")
 
-    grade_btn, mlz_btn, subject_btn, teacher_btn = find_or_build_mlz_path(grade, subject, teacher)
+    grade_btn, mlz_btn, subject_btn, teacher_btn = find_or_build_mlz_path(
+        grade, subject, teacher, grade_btn_id=ctx.user_data.get('mlz_grade_btn_id')
+    )
 
     if not grade_btn or not mlz_btn:
         await wait_msg.edit_text("⚠️ حدث خطأ في تحديد المسار. أعد المحاولة.")
@@ -933,6 +923,7 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
         return
 
     btn_name = _build_btn_name(mlz_type, year, ctx.user_data['mlz_label_emojis'])
+    grade_path = grade_btn.get('_grade_path_labels') or [grade_btn['label']]
 
     # ── كشف التكرار قبل الحفظ ─────────────────────────────────
     existing_children = get_buttons(teacher_btn['id'])
@@ -943,7 +934,7 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
             await _do_add_mlz(
                 wait_msg, ctx, bot,
                 teacher_btn['id'], btn_name, file_type, file_id, desc,
-                [grade_btn['label'], mlz_btn['label'], subject_btn['label'], teacher_btn['label'], duplicate['label']],
+                [*grade_path, mlz_btn['label'], subject_btn['label'], teacher_btn['label'], duplicate['label']],
                 existing_bid=duplicate['id']
             )
             _clear_mlz(ctx)
@@ -959,7 +950,7 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
         ctx.user_data['mlz_dup_desc']      = desc
         ctx.user_data['mlz_dup_file_type'] = file_type
         ctx.user_data['mlz_dup_file_id']   = file_id
-        ctx.user_data['mlz_dup_grade']     = grade_btn['label']
+        ctx.user_data['mlz_dup_grade']     = grade_path
         ctx.user_data['mlz_dup_mlz']       = mlz_btn['label']
         ctx.user_data['mlz_dup_subject']   = subject_btn['label']
         ctx.user_data['mlz_dup_teacher']   = teacher_btn['label']
@@ -970,7 +961,7 @@ async def finish_mlz_flow(m, ctx, uid, chat_id, bot):
     await _do_add_mlz(
         wait_msg, ctx, bot,
         teacher_btn['id'], btn_name, file_type, file_id, desc,
-        [grade_btn['label'], mlz_btn['label'], subject_btn['label'], teacher_btn['label'], btn_name]
+        [*grade_path, mlz_btn['label'], subject_btn['label'], teacher_btn['label'], btn_name]
     )
     _clear_mlz(ctx)
 
