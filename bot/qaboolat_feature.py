@@ -78,29 +78,52 @@ def format_results(branch: str, grade: float, results: list) -> list[str]:
         entry += f" *({r['min_grade']:.2f})*"
         by_uni[uni].append(entry)
 
-    # بناء الرسالة الأولى (رأس + إحصاء)
+    # بناء الرسائل مع ترك هامش تحت حد Telegram (4096 UTF-16 units).
     header = (
         f"🎓 *نتائج القبول — معدل {grade:.2f} ({branch})*\n"
         f"✅ عدد الكليات التي تُقبل فيها: *{len(results)}*\n"
         "——————————————"
     )
-
+    continuation_header = (
+        f"🎓 *تكملة النتائج — معدل {grade:.2f} ({branch})*\n"
+        f"✅ عدد الكليات التي تُقبل فيها: *{len(results)}*"
+    )
     chunks = []
     current_lines = [header]
-    current_len = len(header)
-    LIMIT = 3800  # هامش أمان أسفل 4096
+    current_len = len(header.encode("utf-16-le")) // 2
+    LIMIT = 3500
+
+    def _line_cost(line: str) -> int:
+        # سطر جديد قبل كل سطر جديد عند ضمه إلى الرسالة الحالية.
+        return 1 + len(line.encode("utf-16-le")) // 2
 
     for uni, colleges in by_uni.items():
-        block_lines = [f"\n🏛 *{uni}*"] + [f"  • {c}" for c in colleges]
-        block_text = "\n".join(block_lines)
+        heading = f"🏛 *{uni}*"
+        college_lines = [f"  • {college}" for college in colleges]
 
-        if current_len + len(block_text) > LIMIT and len(current_lines) > 1:
+        # إذا لم تتسع بداية الجامعة وأول كلية، ابدأ رسالة متابعة قبل الجامعة.
+        if current_len + _line_cost(heading) + _line_cost(college_lines[0]) > LIMIT:
             chunks.append("\n".join(current_lines))
-            current_lines = [block_text]
-            current_len = len(block_text)
-        else:
-            current_lines.append(block_text)
-            current_len += len(block_text)
+            current_lines = [continuation_header]
+            current_len = len(continuation_header.encode("utf-16-le")) // 2
+
+        current_lines.append(heading)
+        current_len += _line_cost(heading)
+
+        for college_line in college_lines:
+            if current_len + _line_cost(college_line) > LIMIT:
+                chunks.append("\n".join(current_lines))
+                continued_heading = f"🏛 *{uni} — تكملة*"
+                current_lines = [continuation_header, continued_heading]
+                current_len = (
+                    len(continuation_header.encode("utf-16-le")) // 2
+                    + _line_cost(continued_heading)
+                )
+
+            if current_len + _line_cost(college_line) > LIMIT:
+                raise ValueError("A college entry exceeds the safe Telegram message size.")
+            current_lines.append(college_line)
+            current_len += _line_cost(college_line)
 
     if current_lines:
         current_lines.append("\n——————————————")
