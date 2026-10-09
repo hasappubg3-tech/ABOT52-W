@@ -15,81 +15,51 @@
 
   const navbar = searchBar.closest('.navbar');
   let lastScrollY = Math.max(0, window.scrollY);
-  let searchAnimating = false;
-  let finishAnimationTimer;
-
-  function setSearchOverlay(enabled) {
-    if (isPersistent && navbar) {
-      navbar.classList.toggle('home-search-overlay', enabled);
-    }
-  }
-
-  function finishSearchAnimation() {
-    if (!searchAnimating) return;
-    searchAnimating = false;
-    clearTimeout(finishAnimationTimer);
-    const collapsed = navbar.classList.contains('home-search-collapsed');
-    // Keep hidden bars out of normal flow; reveal the final state as one transform.
-    setSearchOverlay(collapsed || window.scrollY > 0);
-    searchBar.style.height = 'auto';
-    lastScrollY = Math.max(0, window.scrollY);
-  }
+  let scrollFramePending = false;
+  let scrollDirection = 0;
+  let directionTravel = 0;
 
   function setSearchCollapsed(collapsed) {
     if (!isPersistent || !navbar) return;
     if (navbar.classList.contains('home-search-collapsed') === collapsed) return;
-    searchAnimating = true;
-    clearTimeout(finishAnimationTimer);
-    if (collapsed) {
-      if (!navbar.classList.contains('home-search-overlay')) {
-        searchBar.style.height = `${searchBar.getBoundingClientRect().height}px`;
-        searchBar.offsetHeight;
-      }
-      navbar.classList.add('home-search-collapsed');
-      if (!navbar.classList.contains('home-search-overlay')) {
-        requestAnimationFrame(() => {
-          searchBar.style.height = '0px';
-        });
-      }
-      clearResults();
-    } else {
-      // أثناء التمرير يظهر الشريط فوق المحتوى حتى لا يدفعه إلى الأسفل.
-      setSearchOverlay(true);
-      searchBar.style.height = 'auto';
-      navbar.classList.remove('home-search-collapsed');
-    }
+    navbar.classList.toggle('home-search-collapsed', collapsed);
     toggleBtn?.setAttribute('aria-expanded', String(!collapsed));
-    finishAnimationTimer = setTimeout(finishSearchAnimation, 320);
+    if (collapsed) clearResults();
+  }
+
+  function updateSearchOnScroll() {
+    scrollFramePending = false;
+    const currentY = Math.max(0, window.scrollY);
+    const delta = currentY - lastScrollY;
+    lastScrollY = currentY;
+    if (searchBar.contains(document.activeElement)) {
+      directionTravel = 0;
+      scrollDirection = 0;
+      return;
+    }
+    if (currentY <= 40) {
+      setSearchCollapsed(false);
+      directionTravel = 0;
+      scrollDirection = 0;
+      return;
+    }
+    if (!delta) return;
+    const direction = Math.sign(delta);
+    if (direction !== scrollDirection) directionTravel = 0;
+    scrollDirection = direction;
+    directionTravel += Math.abs(delta);
+    // Accumulate small movements, but do not flicker on tiny direction reversals.
+    if (directionTravel < 12) return;
+    if (direction < 0) setSearchCollapsed(false);
+    else if (currentY > 120) setSearchCollapsed(true);
+    directionTravel = 0;
   }
 
   if (isPersistent) {
-    searchBar.addEventListener('transitionend', (event) => {
-      if (event.propertyName === 'height' || event.propertyName === 'transform') {
-        finishSearchAnimation();
-      }
-    });
     window.addEventListener('scroll', () => {
-      const currentY = Math.max(0, window.scrollY);
-      if (searchAnimating) {
-        lastScrollY = currentY;
-        return;
-      }
-      if (searchBar.contains(document.activeElement)) {
-        lastScrollY = currentY;
-        return;
-      }
-      const delta = currentY - lastScrollY;
-      if (currentY <= 40) {
-        setSearchCollapsed(false);
-        if (currentY === 0 && !searchAnimating) setSearchOverlay(false);
-      } else if (Math.abs(delta) < 12) {
-        return;
-      } else if (delta > 0 && currentY > 120) {
-        setSearchCollapsed(true);
-      } else if (delta < 0) {
-        setSearchCollapsed(false);
-      }
-      lastScrollY = currentY;
+      if (scrollFramePending) return;
+      scrollFramePending = true;
+      requestAnimationFrame(updateSearchOnScroll);
     }, { passive: true });
   }
 

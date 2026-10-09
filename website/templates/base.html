@@ -38,8 +38,9 @@
 <body>
 
 <!-- ══ شريط التنقل ═══════════════════════════════════════════════ -->
-<header class="navbar">
-  {% set persistent_search = request.path == '/' %}
+{% set persistent_search = request.path == '/' %}
+<header class="navbar{% if persistent_search %} navbar--home{% endif %}">
+  <div class="nav-top">
   <div class="nav-inner">
     <a href="/" class="nav-brand">
       <img src="/static/img/logo-main.png" alt="شبكة الامير" class="nav-logo" id="site-logo">
@@ -59,6 +60,7 @@
         البوت
       </a>
     </div>
+  </div>
   </div>
 
   <!-- بحث الرئيسية يتقلص إلى أيقونة عند النزول ويعود عند الصعود -->

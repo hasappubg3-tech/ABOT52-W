@@ -141,6 +141,7 @@ class FlexibleSearchTests(unittest.TestCase):
         response = self.client.get("/")
         html = response.get_data(as_text=True)
         response.close()
+        self.assertIn('class="navbar navbar--home"', html)
         self.assertIn('class="search-bar search-bar--persistent"', html)
         self.assertIn('id="search-input"', html)
         self.assertIn('class="icon-btn home-search-toggle"', html)
@@ -153,6 +154,7 @@ class FlexibleSearchTests(unittest.TestCase):
         self.assertIn('id="search-toggle"', html)
         self.assertIn('class="search-bar"', html)
         self.assertNotIn('search-bar--persistent', html)
+        self.assertNotIn('navbar--home', html)
 
     def test_website_visibility_revision_invalidates_the_cached_search_index(self):
         first = web._search_index_records()

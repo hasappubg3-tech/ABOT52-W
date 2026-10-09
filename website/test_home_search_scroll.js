@@ -21,9 +21,9 @@ function element(classes = []) {
     setAttribute(name, value) { this.attributes[name] = value; },
     contains(target) { return target === this || target === input; },
     focus() { document.activeElement = this; },
-    getBoundingClientRect() { return { height: values.has('home-search-collapsed') ? 0 : 80 }; },
-    get scrollHeight() { return 80; },
-    get offsetHeight() { return 80; },
+    getBoundingClientRect() { assert.fail('Scroll handling must not force layout reads'); },
+    get scrollHeight() { assert.fail('Scroll handling must not force layout reads'); },
+    get offsetHeight() { assert.fail('Scroll handling must not force layout reads'); },
   };
 }
 
@@ -55,33 +55,41 @@ function scroll(y) {
   window.scrollY = y;
   window.listeners.scroll();
   while (frames.length) frames.shift()();
-  bar.listeners.transitionend?.({ propertyName: 'transform' });
 }
 function collapsed() {
   return navbar.classList.contains('home-search-collapsed');
 }
-function overlay() {
-  return navbar.classList.contains('home-search-overlay');
-}
-
 assert.equal(collapsed(), false, 'Starts expanded');
-assert.equal(overlay(), false, 'Starts in normal page flow');
 scroll(90);
 assert.equal(collapsed(), false, 'Does not collapse near the top');
 scroll(200);
 assert.equal(collapsed(), true, 'Downward scrolling collapses search');
-assert.equal(overlay(), true, 'Collapsed search is removed from page flow');
 assert.equal(toggle.attributes['aria-expanded'], 'false');
 scroll(195);
 assert.equal(collapsed(), true, 'Small movements do not flicker');
 scroll(165);
 assert.equal(collapsed(), false, 'Upward scrolling restores search');
-assert.equal(overlay(), true, 'Scrolling up expands over content without pushing it');
-assert.equal(bar.style.height, 'auto', 'Expanded height returns to content-driven sizing');
+assert.deepEqual(bar.style, {}, 'Revealing search never changes inline layout styles');
+scroll(185);
+assert.equal(collapsed(), true, 'Direction reversal works without waiting for animation end');
+scroll(155);
+assert.equal(collapsed(), false, 'Rapid upward reversal restores search immediately');
+scroll(200);
+scroll(195);
+scroll(190);
+assert.equal(collapsed(), true, 'Tiny upward steps do not flicker');
+scroll(187);
+assert.equal(collapsed(), false, 'Small upward movements accumulate to reveal search');
+window.scrollY = 250;
+window.listeners.scroll();
+window.scrollY = 260;
+window.listeners.scroll();
+assert.equal(frames.length, 1, 'Multiple scroll events use only one animation frame');
+while (frames.length) frames.shift()();
+assert.equal(collapsed(), true);
 scroll(250);
 toggle.listeners.click();
 while (frames.length) frames.shift()();
-bar.listeners.transitionend?.({ propertyName: 'transform' });
 assert.equal(collapsed(), false, 'The icon opens search');
 assert.equal(document.activeElement, input, 'The icon focuses the field');
 scroll(400);
@@ -91,5 +99,5 @@ scroll(500);
 assert.equal(collapsed(), true);
 scroll(0);
 assert.equal(collapsed(), false, 'Returning to the top restores search');
-assert.equal(overlay(), false, 'At the top, search returns to normal page layout');
+assert.deepEqual(bar.style, {}, 'At the top, no positional or height reset is needed');
 console.log('Homepage search scroll checks passed');
