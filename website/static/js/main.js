@@ -9,11 +9,12 @@
   const searchInput  = document.getElementById('search-input');
   const clearBtn     = document.getElementById('clear-search');
   const resultsBox   = document.getElementById('search-results');
+  const isPersistent = searchBar?.classList.contains('search-bar--persistent');
 
-  if (!toggleBtn || !searchBar || !searchInput) return;
+  if (!searchBar || !searchInput) return;
 
-  // فتح/إغلاق شريط البحث
-  toggleBtn.addEventListener('click', () => {
+  // فتح/إغلاق البحث المنسدل في الصفحات الداخلية؛ يبقى ظاهراً في الرئيسية.
+  toggleBtn?.addEventListener('click', () => {
     const isOpen = searchBar.classList.toggle('open');
     if (isOpen) {
       searchInput.focus();
@@ -24,7 +25,7 @@
   });
 
   if (new URLSearchParams(window.location.search).get('open_search') === '1') {
-    searchBar.classList.add('open');
+    if (!isPersistent) searchBar.classList.add('open');
     window.Telegram?.WebApp?.ready();
     window.Telegram?.WebApp?.expand();
     const focusSearch = () => searchInput.focus({ preventScroll: true });
@@ -69,7 +70,7 @@
       if (q) window.location.href = `/search?q=${encodeURIComponent(q)}`;
     }
     if (e.key === 'Escape') {
-      searchBar.classList.remove('open');
+      if (!isPersistent) searchBar.classList.remove('open');
       clearResults();
     }
   });
@@ -104,10 +105,9 @@
 
   // إغلاق عند الضغط خارج شريط البحث
   document.addEventListener('click', (e) => {
-    if (!searchBar.contains(e.target) && e.target !== toggleBtn && !toggleBtn?.contains(e.target)) {
-      searchBar.classList.remove('open');
-      clearResults();
-    }
+    if (searchBar.contains(e.target) || toggleBtn?.contains(e.target)) return;
+    if (!isPersistent) searchBar.classList.remove('open');
+    clearResults();
   });
 })();
 

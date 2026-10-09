@@ -149,6 +149,19 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   padding: .6rem 1rem;
 }
 .search-bar.open { display: block; }
+.search-bar--persistent {
+  display: block;
+  padding: .75rem 1rem 1rem;
+  background: linear-gradient(180deg, #fff 0%, #FBF7EE 100%);
+  border-bottom: 1px solid var(--gold-border);
+}
+.search-bar--persistent #search-input {
+  min-height: 52px;
+  border: 2px solid var(--gold);
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(201,162,39,.14);
+  font-weight: 600;
+}
 
 .search-inner {
   position: relative;
