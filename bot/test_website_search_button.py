@@ -30,10 +30,9 @@ class WebsiteSearchButtonTests(unittest.TestCase):
     def _build_keyboard(self, button_id):
         return self._build_markup(button_id).keyboard[0][0]
 
-    def test_control_keyboard_requests_persistent_display(self):
+    def test_control_keyboard_does_not_request_persistent_display(self):
         markup = self._build_markup(14434)
-        self.assertTrue(markup.is_persistent)
-        self.assertTrue(markup.to_dict()["is_persistent"])
+        self.assertFalse(markup.to_dict().get("is_persistent", False))
 
     def test_search_button_opens_the_website_mini_app(self):
         button = self._build_keyboard(14433)

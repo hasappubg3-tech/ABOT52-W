@@ -390,7 +390,6 @@ def build_kb(uid, pid=None):
     return ReplyKeyboardMarkup(
         rows,
         resize_keyboard=True,
-        is_persistent=True,
     ) if rows else None
 
 def is_bot_button_text(text: str, pid=None, marker_bid=None) -> bool:
