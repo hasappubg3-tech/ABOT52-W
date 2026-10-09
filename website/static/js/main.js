@@ -29,8 +29,9 @@
     searchAnimating = false;
     clearTimeout(finishAnimationTimer);
     const collapsed = navbar.classList.contains('home-search-collapsed');
-    searchBar.style.height = collapsed ? '0px' : 'auto';
-    setSearchOverlay(window.scrollY > 0);
+    // Keep hidden bars out of normal flow; reveal the final state as one transform.
+    setSearchOverlay(collapsed || window.scrollY > 0);
+    searchBar.style.height = 'auto';
     lastScrollY = Math.max(0, window.scrollY);
   }
 
@@ -40,22 +41,22 @@
     searchAnimating = true;
     clearTimeout(finishAnimationTimer);
     if (collapsed) {
-      searchBar.style.height = `${searchBar.getBoundingClientRect().height}px`;
-      searchBar.offsetHeight;
+      if (!navbar.classList.contains('home-search-overlay')) {
+        searchBar.style.height = `${searchBar.getBoundingClientRect().height}px`;
+        searchBar.offsetHeight;
+      }
       navbar.classList.add('home-search-collapsed');
-      requestAnimationFrame(() => {
-        searchBar.style.height = '0px';
-      });
+      if (!navbar.classList.contains('home-search-overlay')) {
+        requestAnimationFrame(() => {
+          searchBar.style.height = '0px';
+        });
+      }
       clearResults();
     } else {
-      searchBar.style.height = '0px';
       // أثناء التمرير يظهر الشريط فوق المحتوى حتى لا يدفعه إلى الأسفل.
-      setSearchOverlay(window.scrollY > 0);
+      setSearchOverlay(true);
+      searchBar.style.height = 'auto';
       navbar.classList.remove('home-search-collapsed');
-      const expandedHeight = searchBar.scrollHeight;
-      requestAnimationFrame(() => {
-        searchBar.style.height = `${expandedHeight}px`;
-      });
     }
     toggleBtn?.setAttribute('aria-expanded', String(!collapsed));
     finishAnimationTimer = setTimeout(finishSearchAnimation, 320);
@@ -63,7 +64,9 @@
 
   if (isPersistent) {
     searchBar.addEventListener('transitionend', (event) => {
-      if (event.propertyName === 'height') finishSearchAnimation();
+      if (event.propertyName === 'height' || event.propertyName === 'transform') {
+        finishSearchAnimation();
+      }
     });
     window.addEventListener('scroll', () => {
       const currentY = Math.max(0, window.scrollY);

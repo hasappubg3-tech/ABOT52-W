@@ -173,7 +173,8 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   height: auto;
   overflow: hidden;
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scaleY(1);
+  transform-origin: top center;
   transition: height .24s cubic-bezier(.2,.7,.2,1),
               opacity .16s ease,
               transform .24s cubic-bezier(.2,.7,.2,1),
@@ -196,8 +197,17 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   border-top-color: transparent;
   border-bottom-color: transparent;
   opacity: 0;
-  transform: translateY(-7px);
+  transform: translateY(-7px) scaleY(.96);
   pointer-events: none;
+}
+.navbar.home-search-overlay.home-search-collapsed .search-bar--persistent {
+  height: auto;
+  padding: .75rem 1rem 1rem;
+  border-top-color: var(--border);
+  border-bottom-color: var(--gold-border);
+  opacity: 0;
+  transform: translateY(-7px) scaleY(0);
+  transition: opacity .16s ease, transform .24s cubic-bezier(.2,.7,.2,1);
 }
 .search-bar--persistent #search-input {
   min-height: 52px;

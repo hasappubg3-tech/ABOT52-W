@@ -55,7 +55,7 @@ function scroll(y) {
   window.scrollY = y;
   window.listeners.scroll();
   while (frames.length) frames.shift()();
-  bar.listeners.transitionend?.({ propertyName: 'height' });
+  bar.listeners.transitionend?.({ propertyName: 'transform' });
 }
 function collapsed() {
   return navbar.classList.contains('home-search-collapsed');
@@ -81,7 +81,7 @@ assert.equal(bar.style.height, 'auto', 'Expanded height returns to content-drive
 scroll(250);
 toggle.listeners.click();
 while (frames.length) frames.shift()();
-bar.listeners.transitionend?.({ propertyName: 'height' });
+bar.listeners.transitionend?.({ propertyName: 'transform' });
 assert.equal(collapsed(), false, 'The icon opens search');
 assert.equal(document.activeElement, input, 'The icon focuses the field');
 scroll(400);
