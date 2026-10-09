@@ -15,26 +15,53 @@
 
   const navbar = searchBar.closest('.navbar');
   let lastScrollY = Math.max(0, window.scrollY);
-  let settlingSearchLayout = false;
+  let searchAnimating = false;
+  let finishAnimationTimer;
+
+  function finishSearchAnimation() {
+    if (!searchAnimating) return;
+    searchAnimating = false;
+    clearTimeout(finishAnimationTimer);
+    const collapsed = navbar.classList.contains('home-search-collapsed');
+    searchBar.style.height = collapsed ? '0px' : 'auto';
+    lastScrollY = Math.max(0, window.scrollY);
+  }
 
   function setSearchCollapsed(collapsed) {
     if (!isPersistent || !navbar) return;
     if (navbar.classList.contains('home-search-collapsed') === collapsed) return;
-    navbar.classList.toggle('home-search-collapsed', collapsed);
+    searchAnimating = true;
+    clearTimeout(finishAnimationTimer);
+    if (collapsed) {
+      searchBar.style.height = `${searchBar.getBoundingClientRect().height}px`;
+      searchBar.offsetHeight;
+      navbar.classList.add('home-search-collapsed');
+      requestAnimationFrame(() => {
+        searchBar.style.height = '0px';
+      });
+      clearResults();
+    } else {
+      searchBar.style.height = '0px';
+      navbar.classList.remove('home-search-collapsed');
+      const expandedHeight = searchBar.scrollHeight;
+      requestAnimationFrame(() => {
+        searchBar.style.height = `${expandedHeight}px`;
+      });
+    }
     toggleBtn?.setAttribute('aria-expanded', String(!collapsed));
-    if (collapsed) clearResults();
-    // تجاهل تغير موضع الصفحة الناتج عن تغير ارتفاع الشريط نفسه.
-    settlingSearchLayout = true;
-    requestAnimationFrame(() => {
-      lastScrollY = Math.max(0, window.scrollY);
-      settlingSearchLayout = false;
-    });
+    finishAnimationTimer = setTimeout(finishSearchAnimation, 320);
   }
 
   if (isPersistent) {
+    searchBar.addEventListener('transitionend', (event) => {
+      if (event.propertyName === 'height') finishSearchAnimation();
+    });
     window.addEventListener('scroll', () => {
-      if (settlingSearchLayout) return;
       const currentY = Math.max(0, window.scrollY);
+      if (searchAnimating) {
+        lastScrollY = currentY;
+        return;
+      }
       if (searchBar.contains(document.activeElement)) {
         lastScrollY = currentY;
         return;

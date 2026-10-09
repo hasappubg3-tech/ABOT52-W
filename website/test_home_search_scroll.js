@@ -21,6 +21,9 @@ function element(classes = []) {
     setAttribute(name, value) { this.attributes[name] = value; },
     contains(target) { return target === this || target === input; },
     focus() { document.activeElement = this; },
+    getBoundingClientRect() { return { height: values.has('home-search-collapsed') ? 0 : 80 }; },
+    get scrollHeight() { return 80; },
+    get offsetHeight() { return 80; },
   };
 }
 
@@ -52,6 +55,7 @@ function scroll(y) {
   window.scrollY = y;
   window.listeners.scroll();
   while (frames.length) frames.shift()();
+  bar.listeners.transitionend?.({ propertyName: 'height' });
 }
 function collapsed() {
   return navbar.classList.contains('home-search-collapsed');
@@ -70,6 +74,7 @@ assert.equal(collapsed(), false, 'Upward scrolling restores search');
 scroll(250);
 toggle.listeners.click();
 while (frames.length) frames.shift()();
+bar.listeners.transitionend?.({ propertyName: 'height' });
 assert.equal(collapsed(), false, 'The icon opens search');
 assert.equal(document.activeElement, input, 'The icon focuses the field');
 scroll(400);
