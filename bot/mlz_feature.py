@@ -83,8 +83,30 @@ def _clean_source_text(text: str) -> str:
     return cleaned
 
 # ── الاستخراج المحلي بدون Gemini ─────────────────────────────────
-_GRADE_LEVELS = r'(?:السادس|الخامس|الرابع|الثالث|الثاني|الأول|الاول|السابع|الثامن|التاسع|العاشر)'
-_GRADE_TYPES  = r'(?:علمي|أدبي|ادبي|إعدادي|اعدادي|أعدادي|الإعدادي|الاعدادي|الأعدادي|متوسط|ابتدائي|ثانوي|تطبيقي|مهني|الأعدادية|الاعدادية)'
+_GRADE_LEVELS = (
+    r'(?:السادس|سادس|الخامس|خامس|الرابع|رابع|الثالث|ثالث|الثاني|ثاني|'
+    r'الأولى|الاولى|أولى|اولى|الأول|الاول|أول|اول|'
+    r'السابعة|السابع|سابع|الثامنة|الثامن|ثامن|'
+    r'التاسعة|التاسع|تاسع|العاشرة|العاشر|عاشر|'
+    r'[١-٩]|[1-9])'
+)
+_GRADE_TYPES  = (
+    r'(?:علمي|العلمي|أدبي|الادبي|الأدبي|ادبي|'
+    r'إعدادي|اعدادي|أعدادي|الإعدادي|الاعدادي|الأعدادي|'
+    r'إعدادية|اعدادية|أعدادية|الإعدادية|الاعدادية|الأعدادية|'
+    r'متوسط|المتوسط|متوسطة|المتوسطة|'
+    r'ابتدائي|الابتدائي|ابتدائية|الابتدائية|'
+    r'ثانوي|الثانوي|ثانوية|الثانوية|'
+    r'تطبيقي|التطبيقي|تطبيقية|التطبيقية|مهني|المهني)'
+)
+_GRADE_NUMBER_WORDS = {
+    'اول', 'ثاني', 'ثالث', 'رابع', 'خامس', 'سادس',
+    'سابع', 'ثامن', 'تاسع', 'عاشر',
+    *[str(number) for number in range(1, 13)],
+}
+_GRADE_QUALIFIER_WORDS = {
+    'علمي', 'ادبي', 'ابتدائي', 'متوسط', 'اعدادي', 'ثانوي', 'تطبيقي', 'مهني',
+}
 _TEACHER_PREFIX = r'(?:الأستاذ|الاستاذ|أستاذ|استاذ|للأستاذ|للاستاذ|المدرس|للمدرس|الدكتور|للدكتور|أ\.|م\.)'
 
 _ORDINAL_TO_NUM = {
@@ -121,25 +143,13 @@ def _extract_info_local(text: str) -> dict:
     if yr:
         result['year'] = yr.group(1)
 
-    # ── الصف: مستوى + نوع ────────────────────────────────────────────
-    # الرابع/الخامس/السادس: يجب وجود (علمي أو أدبي) وإلا يُترك الصف فارغاً
-    _BRANCH_RE = r'(?:علمي|أدبي|ادبي)'
-    high_grade_m = _re.search(
-        r'(?:السادس|الخامس|الرابع)\s+' + _BRANCH_RE,
+    # ── الصف: اقبل المرحلة الابتدائية/المتوسطة أيضاً للصفوف 4–6 ──
+    grade_m = _re.search(
+        _GRADE_LEVELS + r'(?:\s+' + _GRADE_TYPES + r')?',
         cleaned
     )
-    # الصفوف الأخرى: تقبل أي نوع أو بدون نوع
-    other_grade_m = _re.search(
-        r'(?:الثالث|الثاني|الأول|الاول|السابع|الثامن|التاسع|العاشر)'
-        r'(?:\s+(?:علمي|أدبي|ادبي|إعدادي|اعدادي|أعدادي|الإعدادي|الاعدادي|الأعدادي'
-        r'|الأعدادية|الاعدادية|متوسط|ابتدائي|ثانوي|تطبيقي|مهني))?',
-        cleaned
-    )
-    if high_grade_m:
-        result['grade'] = high_grade_m.group(0).strip()
-    elif other_grade_m:
-        result['grade'] = other_grade_m.group(0).strip()
-    # إذا الصف السادس/الخامس/الرابع موجود بدون تفرع → يُترك فارغاً ليملأه المشرف
+    if grade_m and _is_complete_grade(grade_m.group(0)):
+        result['grade'] = grade_m.group(0).strip()
 
     # ── المدرس: بعد كلمة الأستاذ/المدرس/الدكتور ──────────────────
     teacher_m = _re.search(
@@ -208,7 +218,7 @@ async def extract_mlz_info(source_text: str) -> dict:
         "استخرج من النص:\n"
         "- subject: اسم المادة الدراسية (أي مادة دراسية عراقية)\n"
         "- teacher: الاسم الكامل لأي شخص مذكور (أستاذ أو مدرس)\n"
-        "- grade: الصف الدراسي — قاعدة مهمة: الصفوف الرابع والخامس والسادس يجب أن تحتوي صراحةً على كلمة (علمي أو أدبي)، مثل: الخامس علمي، السادس أدبي، الرابع علمي — إن لم يُذكر النوع (علمي/أدبي) بوضوح اترك الحقل فارغاً تماماً\n"
+        "- grade: الصف الدراسي. اذكر المرحلة كما وردت، مثل: الأول ابتدائي، الثالث متوسط، الخامس علمي، السادس أدبي. للصفوف الرابع والخامس والسادس يجب تمييز المرحلة (ابتدائي/متوسط/إعدادي) أو الفرع (علمي/أدبي)؛ إذا غاب التمييز اتركه فارغاً.\n"
         "- year: أي سنة من 4 أرقام (2020-2030)\n"
         "- part: رقم الجزء إن وجد (مثال: 1 أو 2)، اتركه فارغاً إن لم يُذكر\n"
         "- mlz_type: نوع المحتوى (مراجعة أو وزاريات أو واجبات أو ملخص أو أسئلة أو كتاب أو ملزمة)، اتركه فارغاً إن لم يُذكر\n\n"
@@ -225,12 +235,8 @@ async def extract_mlz_info(source_text: str) -> dict:
                 for k in ('subject', 'teacher', 'grade', 'year', 'part', 'mlz_type'):
                     val = gemini.get(k, '').strip()
                     if not local.get(k) and val:
-                        # الصفوف الرابع/الخامس/السادس يجب أن تحتوي علمي أو أدبي
-                        if k == 'grade':
-                            is_high = _re.search(r'(?:السادس|الخامس|الرابع)', val)
-                            has_branch = _re.search(r'(?:علمي|أدبي|ادبي)', val)
-                            if is_high and not has_branch:
-                                continue  # رفض الصف الناقص
+                        if k == 'grade' and not _is_complete_grade(val):
+                            continue
                         local[k] = val
     except Exception as e:
         logging.warning(f"[MLZ] Gemini enhancement error: {e}")
@@ -247,6 +253,46 @@ def _norm(text: str) -> str:
     text = text.replace('ة', 'ه').replace('ى', 'ي')
     text = text.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا')
     return _re.sub(r'\s+', ' ', text).strip().lower()
+
+_GRADE_TERM_ALIASES = {
+    'اولى': 'اول', 'اولي': 'اول',
+    'ثانيه': 'ثاني', 'ثاني': 'ثاني',
+    'ثالثه': 'ثالث', 'رابعه': 'رابع', 'خامسه': 'خامس',
+    'سادسه': 'سادس', 'سابعه': 'سابع', 'ثامنه': 'ثامن',
+    'تاسعه': 'تاسع', 'عاشره': 'عاشر',
+    'ابتدائيه': 'ابتدائي', 'متوسطه': 'متوسط',
+    'اعداديه': 'اعدادي', 'ثانويه': 'ثانوي',
+    'تطبيقيه': 'تطبيقي', 'مهنيه': 'مهني',
+    'علميه': 'علمي', 'ادبيه': 'ادبي',
+}
+_GRADE_LEVEL_TERMS = {
+    'اول', 'ثاني', 'ثالث', 'رابع', 'خامس', 'سادس', 'سابع', 'ثامن', 'تاسع', 'عاشر',
+    *[str(number) for number in range(1, 13)],
+}
+
+def _grade_terms(text: str) -> set[str]:
+    """يوحّد صيغ الصف والمرحلة حتى تطابق أسماء الأزرار المتداولة."""
+    terms = set()
+    for raw in _norm(text).split():
+        word = raw
+        if word.startswith('ال') and len(word) > 3:
+            word = word[2:]
+        word = _GRADE_TERM_ALIASES.get(word, word)
+        word = word.translate(str.maketrans('٠١٢٣٤٥٦٧٨٩', '0123456789'))
+        if word not in {'صف', 'مرحله', 'قسم', 'مدرسه', 'دراسي', 'الدراسي', 'في', 'من'}:
+            terms.add(word)
+    return terms
+
+def _is_complete_grade(text: str) -> bool:
+    terms = _grade_terms(text)
+    numbers = terms & _GRADE_LEVEL_TERMS
+    if not numbers:
+        return False
+    # الرابع إلى السادس تحتاج فرعاً أو مرحلةً حتى لا نختار صفاً خاطئاً.
+    if numbers & {'رابع', 'خامس', 'سادس', '4', '5', '6'}:
+        if not terms & _GRADE_QUALIFIER_WORDS:
+            return False
+    return True
 
 def _fuzzy_match(query: str, btns: list) -> dict | None:
     if not query or not btns:
@@ -272,6 +318,73 @@ def _fuzzy_match(query: str, btns: list) -> dict | None:
             best_score = score
             best = b
     return best if best_score >= min_needed else None
+
+_MLZ_FOLDER_KEYWORDS = ('ملزم', 'ملازم', 'ملزمه', 'ملازمه', 'ملازمات', 'ملزمات')
+
+def _mlz_folder_from_children(children: list) -> dict | None:
+    for button in children:
+        if button.get('type') != 'menu' or button.get('deleted'):
+            continue
+        if any(keyword in _norm(button.get('label', '')) for keyword in _MLZ_FOLDER_KEYWORDS):
+            return button
+    return None
+
+def _grade_menu_entries() -> list[dict]:
+    """يعثر على الصفوف التي تحتوي زر ملازم سواء كانت بالجذر أم بقسم فرعي."""
+    entries = []
+
+    def visit(parent_id, parent_path, ancestor_ids, buttons=None):
+        for button in (get_buttons(parent_id) if buttons is None else buttons):
+            if button.get('deleted') or button.get('type') != 'menu':
+                continue
+            bid = button.get('id')
+            if bid is None or bid in ancestor_ids:
+                continue
+            path_labels = [*parent_path, button.get('label', '').strip()]
+            children = [child for child in get_buttons(bid)
+                        if not child.get('deleted') and child.get('type') == 'menu']
+            mlz_folder = _mlz_folder_from_children(children)
+            if mlz_folder:
+                if _is_complete_grade(' '.join(path_labels)):
+                    entries.append({
+                        'button': button,
+                        'mlz_button': mlz_folder,
+                        'path_labels': path_labels,
+                    })
+                continue
+            if children:
+                visit(bid, path_labels, ancestor_ids | {bid}, children)
+
+    visit(None, [], set())
+    return entries
+
+def _find_grade_menu(grade: str, selected_id=None) -> dict | None:
+    entries = _grade_menu_entries()
+    if selected_id is not None:
+        return next((entry for entry in entries
+                     if str(entry['button'].get('id')) == str(selected_id)), None)
+
+    query = _norm(grade)
+    query_terms = _grade_terms(grade)
+    if not query or not (query_terms & _GRADE_LEVEL_TERMS):
+        return None
+    matches = [entry for entry in entries
+               if query_terms <= _grade_terms(' '.join(entry['path_labels']))]
+    if len(matches) == 1:
+        return matches[0]
+
+    # A plain "الأول" can exist in both primary and middle school; never guess.
+    exact_path = [entry for entry in matches
+                  if _norm(' '.join(entry['path_labels'])) == query]
+    if len(exact_path) == 1:
+        return exact_path[0]
+    exact_label = [entry for entry in matches
+                   if _norm(entry['button'].get('label', '')) == query]
+    return exact_label[0] if len(exact_label) == 1 else None
+
+def _grade_picker_label(entry: dict) -> str:
+    label = ' › '.join(entry['path_labels'])
+    return label if len(label) <= 64 else f"…{label[-63:]}"
 
 # ── كشف نمط الرموز التعبيرية من الأزرار الموجودة ────────────────
 _EMOJI_RE = _re.compile(

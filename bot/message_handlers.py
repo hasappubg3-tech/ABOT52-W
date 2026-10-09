@@ -2203,6 +2203,8 @@ async def on_message(update: Update, ctx):
             "wait_mlz_part":    "mlz_part",
         }
         ctx.user_data[key_map[state]] = val
+        if state == "wait_mlz_grade":
+            ctx.user_data.pop("mlz_grade_btn_id", None)
         ctx.user_data.pop("state", None)
         try:
             await m.delete()
@@ -2221,8 +2223,12 @@ async def on_message(update: Update, ctx):
             desc        = ctx.user_data.pop("mlz_dup_desc", "")
             file_type   = ctx.user_data.pop("mlz_dup_file_type", "")
             file_id     = ctx.user_data.pop("mlz_dup_file_id", "")
+            grade_path = ctx.user_data.pop("mlz_dup_grade", "")
+            # Duplicate confirmations created before nested grade paths stored a single string.
+            if isinstance(grade_path, str):
+                grade_path = [grade_path] if grade_path else []
             path_parts  = [
-                ctx.user_data.pop("mlz_dup_grade", ""),
+                *grade_path,
                 ctx.user_data.pop("mlz_dup_mlz", ""),
                 ctx.user_data.pop("mlz_dup_subject", ""),
                 ctx.user_data.pop("mlz_dup_teacher", ""),
