@@ -60,6 +60,9 @@ class FlexibleSearchTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return response.get_json()
 
+    def url(self, file_id):
+        return web._attachment_url(file_id)
+
     def test_taa_marbuta_and_plural_variants(self):
         expected = {r["url"] for r in self.results("ملزمة")}
         self.assertTrue(expected)
@@ -75,17 +78,17 @@ class FlexibleSearchTests(unittest.TestCase):
             "اريد ملزمه حسين الهاشمي مع كلام اضافي",
         ]:
             with self.subTest(query=query):
-                self.assertEqual(self.results(query)[0]["url"], "/attachment/physics")
+                self.assertEqual(self.results(query)[0]["url"], self.url("physics"))
 
     def test_typos_and_transposed_letters(self):
         for query in ["حسني الهاشمي", "حسين الهاشمى", "حسين الهاشم", "حسين الهاشممي"]:
             with self.subTest(query=query):
-                self.assertEqual(self.results(query)[0]["url"], "/attachment/physics")
+                self.assertEqual(self.results(query)[0]["url"], self.url("physics"))
 
     def test_normalization_diacritics_kashida_digits_and_articles(self):
         self.assertEqual(
             self.results("مُلَزَّمَه الـفِيزياء ٢٠٢٦")[0]["url"],
-            "/attachment/physics",
+            self.url("physics"),
         )
         self.assertTrue(self.results("فيزياء"))
         self.assertTrue(self.results("حس"))
@@ -94,23 +97,23 @@ class FlexibleSearchTests(unittest.TestCase):
 
     def test_full_match_ranks_before_partial_and_fuzzy_names(self):
         results = self.results("حسين الهاشمي")
-        self.assertEqual(results[0]["url"], "/attachment/physics")
-        self.assertIn("/attachment/chemistry", [r["url"] for r in results])
+        self.assertEqual(results[0]["url"], self.url("physics"))
+        self.assertIn(self.url("chemistry"), [r["url"] for r in results])
         self.assertIn("/note/4", [r["url"] for r in results])
 
     def test_exact_single_name_precedes_fuzzy_name(self):
         urls = [r["url"] for r in self.results("حسين")]
-        self.assertLess(urls.index("/attachment/physics"), urls.index("/attachment/chemistry"))
+        self.assertLess(urls.index(self.url("physics")), urls.index(self.url("chemistry")))
 
     def test_no_cross_sibling_teacher_matches_or_note_fallback(self):
         urls = [r["url"] for r in self.results("حسين الهاشمي")]
-        self.assertNotIn("/attachment/other-teacher", urls)
+        self.assertNotIn(self.url("other-teacher"), urls)
         self.assertNotIn("/note/2", urls)
 
     def test_hidden_and_bot_only_content_stays_hidden(self):
         urls = [r["url"] for r in self.results("حسين الهاشمي")]
-        self.assertNotIn("/attachment/hidden", urls)
-        self.assertNotIn("/attachment/bot-only", urls)
+        self.assertNotIn(self.url("hidden"), urls)
+        self.assertNotIn(self.url("bot-only"), urls)
 
     def test_website_hidden_item_is_absent_from_all_public_entry_points(self):
         self.assertEqual(self.results("جاسم الزبيدي"), [])
@@ -165,7 +168,7 @@ class FlexibleSearchTests(unittest.TestCase):
         self.assertIsNot(first, second)
 
     def test_ancestor_grade_is_searchable(self):
-        self.assertIn("/attachment/physics", [
+        self.assertIn(self.url("physics"), [
             r["url"] for r in self.results("فيزياء السادس العلمي")
         ])
 
@@ -175,8 +178,8 @@ class FlexibleSearchTests(unittest.TestCase):
                 self.assertEqual(self.results(query), [])
 
     def test_years_do_not_fuzzy_match_or_leak_from_siblings(self):
-        self.assertEqual([r["url"] for r in self.results("2025")], ["/attachment/other-teacher"])
-        self.assertEqual([r["url"] for r in self.results("2026")], ["/attachment/physics"])
+        self.assertEqual([r["url"] for r in self.results("2025")], [self.url("other-teacher")])
+        self.assertEqual([r["url"] for r in self.results("2026")], [self.url("physics")])
         self.assertEqual(self.results("2099"), [])
 
     def test_full_results_page_uses_the_same_flexible_search(self):
@@ -184,7 +187,7 @@ class FlexibleSearchTests(unittest.TestCase):
             "q": "اريد ملزمه حسين الهاشمي كلام اضافي",
         })
         self.assertEqual(response.status_code, 200)
-        self.assertIn('href="/attachment/physics"', response.get_data(as_text=True))
+        self.assertIn(f'href="{self.url("physics")}"', response.get_data(as_text=True))
 
     def test_deduplication_limits_and_cached_index(self):
         self.db["content_items"].insert_one({
@@ -192,7 +195,7 @@ class FlexibleSearchTests(unittest.TestCase):
             "caption": "ملزمة الفيزياء حسين الهاشمي",
         })
         self.assertEqual([r["url"] for r in self.results("حسين الهاشمي")].count(
-            "/attachment/physics"
+            self.url("physics")
         ), 1)
         self.assertEqual(len(web._search_content("ملزمة", limit=2)), 2)
         first = web._search_index_records()

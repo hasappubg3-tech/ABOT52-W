@@ -43,7 +43,7 @@ class SeoTests(unittest.TestCase):
         self.client = web.create_app().test_client()
 
     def page(self, path):
-        response = self.client.get(path, base_url="http://preview.invalid")
+        response = self.client.get(path, base_url="http://preview.invalid", follow_redirects=True)
         self.assertEqual(response.status_code, 200)
         return response.get_data(as_text=True)
 
@@ -72,7 +72,8 @@ class SeoTests(unittest.TestCase):
     def test_fixed_https_canonicals_ignore_proxy_host_and_query_parameters(self):
         for path in ["/", "/cat/3", "/attachment/chemistry", "/note/7"]:
             html = self.page(path + "?utm_source=test")
-            expected = "https://alameer-iq.com" + path
+            canonical = web._attachment_url("chemistry") if path == "/attachment/chemistry" else path
+            expected = "https://alameer-iq.com" + canonical
             self.assertIn(f'<link rel="canonical" href="{expected}">', html)
             self.assertIn(f'<meta property="og:url" content="{expected}">', html)
             self.assertNotIn("preview.invalid", html)
@@ -102,7 +103,7 @@ class SeoTests(unittest.TestCase):
         ).group(1))
         self.assertEqual(len(data["itemListElement"]), 2)
         self.assertEqual(data["itemListElement"][-1]["item"],
-                         "https://alameer-iq.com/attachment/chemistry")
+                         "https://alameer-iq.com" + web._attachment_url("chemistry"))
 
     def test_future_materials_get_metadata_and_sitemap_entries_automatically(self):
         self.page("/sitemap.xml")
@@ -118,7 +119,7 @@ class SeoTests(unittest.TestCase):
             self.assertIn(term, description)
         self.assertNotIn("أحمد سالم", description)
         self.assertNotIn("2026", description)
-        self.assertIn("https://alameer-iq.com/attachment/new-file",
+        self.assertIn("https://alameer-iq.com" + web._attachment_url("new-file"),
                       self.page("/sitemap.xml"))
 
 

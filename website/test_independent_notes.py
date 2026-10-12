@@ -77,12 +77,15 @@ class IndependentNotesTests(unittest.TestCase):
             self.addCleanup(mocked.stop)
         self.client = web.create_app().test_client()
 
+    def url(self, file_id):
+        return web._attachment_url(file_id)
+
     def test_category_lists_every_file_as_a_separate_detail_link(self):
         response = self.client.get("/cat/5")
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn('href="/attachment/first-pdf"', page)
-        self.assertIn('href="/attachment/second-pdf"', page)
+        self.assertIn(f'href="{self.url("first-pdf")}"', page)
+        self.assertIn(f'href="{self.url("second-pdf")}"', page)
         self.assertNotIn('href="/note/10"', page)
         self.assertNotIn('href="/file/', page)
         self.assertNotIn("ملفات الملزمة", page)
@@ -113,7 +116,7 @@ class IndependentNotesTests(unittest.TestCase):
             "rating": {"count": 0, "avg": 0, "stars": ""},
             "comments": [], "user_rating": None, "guest_name": "", "shared": True,
         }):
-            page = self.client.get("/attachment/first-pdf").get_data(as_text=True)
+            page = self.client.get(self.url("first-pdf")).get_data(as_text=True)
         self.assertIn("اضغط زر التحميل لتحميل الملف من التلگرام بشكل مباشر.", page)
         self.assertIn("اختر عدداً من النجوم لإرسال تقييمك.", page)
         self.assertIn("التعليقات", page)
@@ -126,24 +129,26 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.location, "/cat/10")
         page = self.client.get(response.location).get_data(as_text=True)
-        self.assertIn('href="/attachment/first-pdf"', page)
-        self.assertIn('href="/attachment/second-pdf"', page)
+        self.assertIn(f'href="{self.url("first-pdf")}"', page)
+        self.assertIn(f'href="{self.url("second-pdf")}"', page)
         self.assertNotIn("ملفات الملزمة", page)
 
     def test_old_single_file_note_link_opens_that_file(self):
         with patch.object(web, "_items", return_value=self.files[:1]):
             response = self.client.get("/note/10")
-        self.assertEqual(response.location, "/attachment/first-pdf")
+        from urllib.parse import unquote
+        self.assertEqual(unquote(response.location), self.url("first-pdf"))
 
     def test_duplicate_file_records_do_not_create_duplicate_cards(self):
         with patch.object(web, "_items", return_value=[self.files[0], self.files[0]]):
             response = self.client.get("/note/10")
             page = self.client.get("/cat/5").get_data(as_text=True)
-        self.assertEqual(response.location, "/attachment/first-pdf")
-        self.assertEqual(page.count('href="/attachment/first-pdf"'), 1)
+        from urllib.parse import unquote
+        self.assertEqual(unquote(response.location), self.url("first-pdf"))
+        self.assertEqual(page.count(f'href="{self.url("first-pdf")}"'), 1)
 
     def test_selected_file_is_separate_from_similar_files(self):
-        response = self.client.get("/attachment/first-pdf")
+        response = self.client.get(self.url("first-pdf"))
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         detail, similar = page.split("ملفات مشابهة", 1)
@@ -153,22 +158,22 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertNotIn(web._bot_download_url(10), detail)
         self.assertNotIn('src="/file/', detail)
         self.assertNotIn("second-pdf", detail)
-        self.assertIn('href="/attachment/second-pdf"', similar)
-        self.assertNotIn('href="/attachment/first-pdf"', similar)
+        self.assertIn(f'href="{self.url("second-pdf")}"', similar)
+        self.assertNotIn(f'href="{self.url("first-pdf")}"', similar)
         self.assertNotIn("ملفات الملزمة", page)
 
     def test_search_opens_independent_detail_pages(self):
         results = self.client.get("/api/search?q=فيزياء").get_json()
         self.assertEqual(
             {result["url"] for result in results},
-            {"/attachment/first-pdf", "/attachment/second-pdf"},
+            {self.url("first-pdf"), self.url("second-pdf")},
         )
 
     def test_home_latest_files_already_use_independent_pages(self):
         results = web._latest_notes()
         self.assertEqual(
             {result["url"] for result in results},
-            {"/attachment/first-pdf", "/attachment/second-pdf"},
+            {self.url("first-pdf"), self.url("second-pdf")},
         )
 
     def test_group_year_does_not_override_file_year(self):
@@ -211,7 +216,7 @@ class IndependentNotesTests(unittest.TestCase):
         )
 
     def test_download_through_bot_does_not_depend_on_preview_availability(self):
-        response = self.client.get("/attachment/first-pdf")
+        response = self.client.get(self.url("first-pdf"))
         page = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
         self.assertIn("تحميل من التلكرام", page)
@@ -219,12 +224,12 @@ class IndependentNotesTests(unittest.TestCase):
         self.assertNotIn("معاينة الملف غير متاحة", page)
         self.assertNotIn("فتح رسالة الملف", page)
         web._file_url.assert_not_called()
-        self.assertIn('href="/attachment/second-pdf"', page)
+        self.assertIn(f'href="{self.url("second-pdf")}"', page)
         self.assertNotIn('<iframe class="pdf-embed"', page)
 
     def test_each_file_in_one_button_has_its_own_telegram_download_target(self):
         for item in self.files:
-            page = self.client.get(f"/attachment/{item['file_id']}").get_data(as_text=True)
+            page = self.client.get(self.url(item["file_id"])).get_data(as_text=True)
             detail = page.split("ملفات مشابهة", 1)[0]
             self.assertIn(f"?start=file_10_{item['id']}", detail)
             self.assertNotIn("?start=btn_10", detail)
@@ -278,7 +283,7 @@ class IndependentNotesTests(unittest.TestCase):
 
     def test_no_similar_files_has_empty_state(self):
         with patch.object(web, "_similar_attachments", return_value=[]):
-            page = self.client.get("/attachment/first-pdf").get_data(as_text=True)
+            page = self.client.get(self.url("first-pdf")).get_data(as_text=True)
         self.assertIn("ملفات مشابهة", page)
         self.assertIn("لا توجد ملفات مشابهة حالياً", page)
 

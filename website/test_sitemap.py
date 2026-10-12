@@ -82,11 +82,12 @@ class SitemapTests(unittest.TestCase):
             "https://alameer-iq.com/",
             "https://alameer-iq.com/cat/1",
             "https://alameer-iq.com/cat/2",
-            "https://alameer-iq.com/attachment/first-file",
-            "https://alameer-iq.com/attachment/second&file",
+            "https://alameer-iq.com" + web._attachment_url("first-file"),
+            "https://alameer-iq.com" + web._attachment_url("second&file"),
             "https://alameer-iq.com/note/4",
         })
-        self.assertIn(b"second&amp;file", response.data)
+        self.assertNotIn(b"/attachment/first-file", response.data)
+        self.assertNotIn(b"/attachment/second", response.data)
 
     def test_robots_advertises_the_same_https_sitemap(self):
         response = self.client.get("/robots.txt", base_url="http://preview.invalid")

@@ -78,7 +78,7 @@ class VisibleAttachmentFallbackTests(unittest.TestCase):
         card = web._independent_notes(
             self.buttons[2], [self.item]
         )[0]
-        self.assertEqual(card["url"], "/attachment/visible-unindexed-file")
+        self.assertEqual(card["url"], web._attachment_url("visible-unindexed-file"))
 
         response = self.client.get(card["url"])
         self.assertEqual(response.status_code, 200)

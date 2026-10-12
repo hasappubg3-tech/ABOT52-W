@@ -7,6 +7,7 @@
 - [Railway public deployment](website-railway-domain.md) — public domain alameer-iq.com is hosted separately on Railway; workspace preview changes require a Railway deploy.
 - [Forgiving Arabic search](website-forgiving-search.md) — students should find materials despite spelling variants, minor typos, and extra words; exact teacher matches remain most relevant.
 - [Website search visibility](website-search-visibility.md) — generate metadata automatically from real materials; keep SEO descriptions out of the visible page.
+- [Arabic attachment links](website-attachment-slugs.md) — use title/teacher Arabic slugs consistently; redirect legacy FileID page URLs with 301.
 - [Telegram admin role policy](admin-role-policy.md) — AI-upload-only supervisors act as members; button management is separate from bot settings; preserve legacy access until configured.
 - [Automatic material-title style](mlz-label-style.md) — type + year + selected custom emoji once at the end; no pin-wrapped names.
 - [School-stage menu layout](school-stage-menu-layout.md) — primary and middle school grades are grouped in their own sections; automatic uploads must not assume grades are root menus.

@@ -17,6 +17,7 @@ from pymongo.errors import PyMongoError
 from . import feedback as feedback_store
 from . import search as search_engine
 from . import seo
+from .attachment_urls import allocate_slug
 from bot.download_targets import encode_delivery_target, parse_delivery_target
 
 BOT_TOKEN    = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -565,7 +566,7 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
         cards.append({
             "id": btn["id"],
             "file_id": file_id,
-            "url": f"/attachment/{file_id}",
+            "url": _attachment_url(file_id),
             "display_label": _attachment_display_title(item, index, btn.get("label", "")),
             "subtitle": _attachment_search_subtitle(item, btn.get("label", "")),
             "thumb_url": False,
@@ -577,7 +578,8 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
 
 
 def _find_visible_attachment(file_id: str) -> dict | None:
-    for record in _search_index_records():
+    records = _search_index_records()
+    for record in _search_index_cache.get("attachment_records", records):
         for index, item in _file_items(record["items"]):
             if item.get("file_id") == file_id:
                 return {
@@ -719,7 +721,7 @@ def _similar_attachments(selected: dict, limit: int = 6) -> list:
             added_at = _content_item_timestamp(item)
             candidates.append({
                 "file_id": file_id,
-                "url": f"/attachment/{file_id}",
+                "url": _attachment_url(file_id),
                 "display_label": title,
                 "subtitle": _attachment_search_subtitle(item, record["label"]),
                 "is_new": bool(added_at and time.time() - added_at < NEW_DAYS * 86400),
@@ -801,15 +803,21 @@ def _search_index_records() -> list:
                 and _search_index_cache.get("visibility_revision") == revision):
             return _search_index_cache["records"]
 
-        visible_buttons = {
+        all_buttons = {
             doc["id"]: doc
             for doc in _col("buttons").find(
-                {"deleted": {"$ne": 1}, "hidden": {"$ne": 1}},
+                {},
                 {"id": 1, "type": 1, "label": 1, "parent_id": 1,
-                 "created_at": 1, "click_count": 1, "unified_rating": 1},
+                 "created_at": 1, "click_count": 1, "unified_rating": 1,
+                 "hidden": 1, "deleted": 1},
             )
         }
+        visible_buttons = {
+            bid: button for bid, button in all_buttons.items()
+            if not button.get("deleted") and not button.get("hidden")
+        }
         items_by_button = {}
+        all_items_by_button = {}
         hidden_item_buttons = set()
         hidden_attachment_buttons = set()
         for item in _col("content_items").find(
@@ -818,6 +826,7 @@ def _search_index_records() -> list:
              "caption": 1, "file_name": 1, "filename": 1, "name": 1, "ord": 1,
              "created_at": 1, "channel_msg_id": 1, "website_hidden": 1, "_id": 1},
         ).sort([("ord", 1), ("id", 1)]):
+            all_items_by_button.setdefault(item.get("button_id"), []).append(item)
             if item.get("website_hidden"):
                 hidden_item_buttons.add(item.get("button_id"))
                 if item.get("type") in {"document", "file"} and item.get("file_id"):
@@ -827,6 +836,7 @@ def _search_index_records() -> list:
 
         allowed_terms = tuple(_normalize_search_text(word) for word in _CONTENT_WHITELIST)
         records = []
+        attachment_records = []
         for btn in sorted(visible_buttons.values(), key=lambda doc: str(doc.get("id", ""))):
             if (btn.get("type") != "content"
                     or _is_bot_only_entry(btn)
@@ -840,6 +850,8 @@ def _search_index_records() -> list:
                     and not _file_items(items)):
                 continue
             label = str(btn.get("label") or "")
+            if _file_items(items):
+                attachment_records.append({"button": btn, "items": items, "label": label})
             normalized_label = _normalize_search_text(label)
             normalized_item_texts = [
                 _normalize_search_text(_search_item_text(item))
@@ -869,14 +881,69 @@ def _search_index_records() -> list:
                 context.append(str(parent.get("label") or ""))
                 parent_id = parent.get("parent_id")
             records[-1]["search_context"] = " ".join(context)
-            records[-1]["search_documents"] = _record_search_documents(records[-1])
 
+        # Reserve names from hidden/deleted source files without exposing their pages.
+        representatives = {}
+        for record in attachment_records:
+            for index, item in _file_items(record["items"]):
+                representatives.setdefault(item["file_id"], (record["button"], index, item))
+        for btn in sorted(all_buttons.values(), key=lambda doc: str(doc.get("id", ""))):
+            for index, item in _file_items(all_items_by_button.get(btn["id"], [])):
+                representatives.setdefault(item["file_id"], (btn, index, item))
+        by_file, by_slug = {}, {}
+        for btn, index, item in sorted(
+            representatives.values(),
+            key=lambda entry: (int(entry[2].get("id") or 0), entry[2]["file_id"]),
+        ):
+            title = _attachment_display_title(item, index, btn.get("label", ""))
+            # Older files may store the teacher only in the parent compound menu.
+            if not _teacher_from_lines(_content_metadata_lines([item]) + [btn.get("label", "")]):
+                parent_id, visited = btn.get("parent_id"), set()
+                while parent_id is not None and parent_id not in visited:
+                    visited.add(parent_id)
+                    parent = all_buttons.get(parent_id)
+                    if not parent:
+                        break
+                    if parent.get("type") == "compound":
+                        title = _title_with_teacher(
+                            title, strip_emoji(parent.get("label", "")),
+                            _release_year(_content_metadata_lines([item]), btn.get("label", "")),
+                        )
+                        break
+                    parent_id = parent.get("parent_id")
+            allocate_slug(item["file_id"], title, by_file, by_slug)
+        attachment_paths = {fid: "/attachment/" + slug for fid, slug in by_file.items()}
+        for record in records:
+            record["search_documents"] = _record_search_documents(record, attachment_paths)
         _search_index_cache = {
             "expires": time.monotonic() + _SEARCH_INDEX_TTL,
             "records": records,
             "visibility_revision": revision,
+            "attachment_records": attachment_records,
+            "attachment_slugs": by_file,
+            "slug_files": by_slug,
         }
         return records
+
+
+def _attachment_url(file_id: str, selected: dict | None = None) -> str:
+    """One URL builder for cards, metadata, legacy redirects, and sitemap."""
+    if (_search_index_cache.get("attachment_slugs") is None
+            or time.monotonic() >= _search_index_cache.get("expires", 0)):
+        _search_index_records()
+    by_file = _search_index_cache.setdefault("attachment_slugs", {})
+    by_slug = _search_index_cache.setdefault("slug_files", {})
+    if file_id not in by_file:
+        # A new file can appear while the short-lived index is still cached.
+        selected = selected or _find_visible_attachment(file_id)
+        if not selected:
+            abort(404)
+        title = _attachment_display_title(
+            selected["item"], selected["index"], selected["button"].get("label", "")
+        )
+        with _search_index_lock:
+            allocate_slug(file_id, title, by_file, by_slug)
+    return "/attachment/" + by_file[file_id]
 
 
 def _attachment_search_subtitle(item: dict, group_label: str) -> str:
@@ -891,7 +958,7 @@ def _search_note_display_name(btn: dict, items: list) -> str:
     return _note_display_name(btn, items)
 
 
-def _record_search_documents(record: dict) -> list:
+def _record_search_documents(record: dict, attachment_paths: dict | None = None) -> list:
     """Keep captions file-specific; shared text and ancestor labels add context."""
     btn, items, label = record["button"], record["items"], record["label"]
     common_text = " ".join(
@@ -912,7 +979,8 @@ def _record_search_documents(record: dict) -> list:
                 "year": max((int(y) for y in _year_candidates(display_label)), default=0),
                 "result": {
                     "id": btn["id"],
-                    "url": f"/attachment/{item['file_id']}",
+                    "url": (attachment_paths[item["file_id"]] if attachment_paths is not None
+                            else _attachment_url(item["file_id"])),
                     "display_label": display_label,
                     "subtitle": _attachment_search_subtitle(item, label),
                     "thumb_url": False,
@@ -977,7 +1045,7 @@ def _latest_notes(limit: int = 8) -> list:
                 candidates.append({
                     "id": btn["id"],
                     "file_id": item["file_id"],
-                    "url": f"/attachment/{item['file_id']}",
+                    "url": _attachment_url(item["file_id"]),
                     "display_label": _attachment_display_title(
                         item, index, record["label"]
                     ),
@@ -1269,9 +1337,15 @@ def create_app() -> Flask:
     # ── صفحة ملف مستقل مع اقتراحات مشابهة ────────────────────────────
     @app.route("/attachment/<path:file_id>")
     def attachment_detail(file_id: str):
+        _search_index_records()
+        identifier = file_id
+        file_id = _search_index_cache.get("slug_files", {}).get(identifier, identifier)
         selected = _find_visible_attachment(file_id)
         if not selected:
             abort(404)
+        canonical_path = _attachment_url(file_id, selected)
+        if identifier != canonical_path.removeprefix("/attachment/"):
+            return redirect(canonical_path, code=301)
 
         record = selected["record"]
         item = selected["item"]
@@ -1282,7 +1356,6 @@ def create_app() -> Flask:
         similar = _similar_attachments(selected)
         feedback = _feedback_context(selected["button"], item)
         breadcrumb = _breadcrumb(selected["button"]["id"])
-        canonical_path = url_for("attachment_detail", file_id=file_id)
 
         return render_template(
             "attachment.html",
@@ -1303,7 +1376,7 @@ def create_app() -> Flask:
             og_description=seo.material_description(
                 display_label, _seo_labels(breadcrumb[:-1]), SITE_NAME
             ),
-            og_url=f"/attachment/{file_id}",
+            og_url=canonical_path,
             og_image="",
             canonical_url=SITE_URL + canonical_path,
             structured_data=seo.breadcrumb_schema(
@@ -1343,7 +1416,7 @@ def create_app() -> Flask:
         if not selected:
             abort(404)
         return save_feedback(selected["button"], selected["item"], action,
-                             url_for("attachment_detail", file_id=file_id))
+                             _attachment_url(file_id, selected))
 
     @app.post("/feedback/note/<int:bid>/<action>")
     def note_feedback(bid, action):
@@ -1490,18 +1563,18 @@ def create_app() -> Flask:
                 add_url(url_for("category", bid=button["id"]), "weekly", "0.8")
 
         # Publish the independent file pages, not their legacy redirect links.
-        for record in _search_index_records():
-            files = _file_items(record["items"])
-            if files:
-                for _, item in files:
-                    add_url(url_for("attachment_detail", file_id=item["file_id"]),
-                            "monthly", "0.9")
-            else:
+        records = _search_index_records()
+        for record in _search_index_cache.get("attachment_records", records):
+            for _, item in _file_items(record["items"]):
+                add_url(_attachment_url(item["file_id"]), "monthly", "0.9")
+        for record in records:
+            if not _file_items(record["items"]):
                 add_url(url_for("note", bid=record["button"]["id"]), "monthly", "0.9")
 
         ET.indent(root, space="  ")
         xml = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-        return Response(xml, content_type="application/xml; charset=utf-8")
+        return Response(xml, content_type="application/xml; charset=utf-8",
+                        headers={"Cache-Control": "no-cache"})
 
     # ── صفحة 404 ─────────────────────────────────────────────────────
     @app.errorhandler(404)

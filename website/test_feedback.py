@@ -115,6 +115,7 @@ class FeedbackTests(unittest.TestCase):
             patch.object(web, "_find_visible_attachment",
                          side_effect=lambda fid: self.selected if fid == "test-pdf" else None),
             patch.object(web, "_similar_attachments", return_value=[]),
+            patch.object(web, "_search_index_cache", {"expires": 0, "records": None}),
         ]:
             mocked.start()
             self.addCleanup(mocked.stop)
@@ -123,7 +124,7 @@ class FeedbackTests(unittest.TestCase):
         self.client = self.app.test_client()
 
     def open(self, client=None):
-        return (client or self.client).get("/attachment/test-pdf")
+        return (client or self.client).get("/attachment/test-pdf", follow_redirects=True)
 
     def post(self, action, client=None, **data):
         client = client or self.client
