@@ -18,6 +18,30 @@ class ArabicSlugTests(unittest.TestCase):
             "ملزمة-الكيمياء-الأستاذ-حسين-الهاشمي",
         )
 
+    def test_grade_is_formatted_as_a_final_title_suffix(self):
+        self.assertEqual(
+            web._study_stage_from_label("السادس العلمي"),
+            "الصف السادس العلمي",
+        )
+        self.assertEqual(
+            web._study_stage_from_label("📚 السادس العلمي"),
+            "الصف السادس العلمي",
+        )
+        self.assertEqual(
+            web._append_study_stage(
+                "ملزمة الكيمياء الجزء 2 للأستاذ حسين الهاشمي",
+                "الصف السادس العلمي",
+            ),
+            "ملزمة الكيمياء الجزء 2 للأستاذ حسين الهاشمي الصف السادس العلمي",
+        )
+        self.assertEqual(
+            web._append_study_stage(
+                "ملزمة الكيمياء السادس العلمي الجزء 2",
+                "الصف السادس العلمي",
+            ),
+            "ملزمة الكيمياء الجزء 2 الصف السادس العلمي",
+        )
+
     def test_emoji_punctuation_and_diacritics_are_removed(self):
         self.assertEqual(arabic_slug("📌 مُلَزَّمة  الكيمياء / الأستاذ حسين 📌"),
                          "ملزمة-الكيمياء-الأستاذ-حسين")
@@ -67,6 +91,9 @@ class AttachmentPermalinkTests(unittest.TestCase):
         html = page.get_data(as_text=True)
         self.assertIn(f'rel="canonical" href="https://alameer-iq.com{self.expected}"', html)
         self.assertIn(f'property="og:url" content="https://alameer-iq.com{self.expected}"', html)
+        self.assertIn(
+            "ملزمة الكيمياء للأستاذ حسين الهاشمي الصف السادس العلمي", html
+        )
         self.assertIn(web._bot_download_url(3, 12), html)
 
     def test_sitemap_lists_the_same_canonical_urls_and_no_file_ids(self):

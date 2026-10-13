@@ -490,7 +490,90 @@ def _title_with_teacher(title: str, teacher: str, year: str) -> str:
     return " ".join(piece for piece in pieces if piece).strip() or title
 
 
-def _note_display_name(btn: dict, items: list | None = None) -> str:
+_STAGE_GRADE_WORDS = (
+    "الأول|الاول|اول|الاولى|الأولى|الثاني|الثانى|ثاني|الثالث|ثالث|"
+    "الرابع|رابع|الخامس|خامس|السادس|سادس|السابع|سابع|الثامن|ثامن|"
+    "التاسع|تاسع|العاشر|عاشر|الحادي عشر|الثاني عشر|"
+    "(?:1[0-2]|[1-9]|[٠-٩])"
+)
+_STAGE_TRACK_WORDS = (
+    "العلمي|علمي|الأدبي|الادبي|أدبي|ادبي|الابتدائي|ابتدائي|"
+    "الابتدائية|ابتدائية|المتوسط|متوسط|المتوسطة|متوسطة|"
+    "الإعدادي|الاعدادي|اعدادي|الإعدادية|الاعدادية|اعدادية"
+)
+_STAGE_GRADE_RE = re.compile(
+    rf"(?:^|\s)(?:(?:ال)?صف\s+)?"
+    rf"((?:{_STAGE_GRADE_WORDS})(?:\s+(?:{_STAGE_TRACK_WORDS}))?)"
+    rf"(?=$|\s)",
+    flags=re.IGNORECASE,
+)
+
+
+def _study_stage_from_label(label: str) -> str:
+    """Turns a grade-menu label into a consistent title suffix."""
+    clean = re.sub(r"\s+", " ", strip_emoji(label)).strip(" |:،؛.-")
+    if not clean:
+        return ""
+
+    match = _STAGE_GRADE_RE.search(clean)
+    if match:
+        return "الصف " + match.group(1).strip()
+
+    stage_match = re.search(
+        r"(?:المرحلة\s+)?((?:ال)?(?:ابتدائية|ابتدائي|متوسطة|متوسط|"
+        r"إعدادية|اعدادية|الإعدادية|الاعدادية))",
+        clean,
+    )
+    if stage_match:
+        stage = stage_match.group(1)
+        if not stage.startswith("ال"):
+            stage = "ال" + stage
+        return "المرحلة " + stage
+    return ""
+
+
+def _study_stage_for_button(button: dict, buttons: dict | None = None) -> str:
+    """Finds the closest school-grade ancestor without changing the material slug."""
+    if buttons is None:
+        cached = _search_index_cache.get("study_stage_by_button")
+        if cached is None:
+            _search_index_records()
+            cached = _search_index_cache.get("study_stage_by_button", {})
+        return cached.get(button.get("id"), "")
+
+    current_id = button.get("parent_id")
+    visited = {button.get("id")}
+    while current_id is not None and current_id not in visited:
+        visited.add(current_id)
+        ancestor = buttons.get(current_id)
+        if not ancestor:
+            break
+        stage = _study_stage_from_label(ancestor.get("label", ""))
+        if stage:
+            return stage
+        current_id = ancestor.get("parent_id")
+    # Some older data has the grade embedded in the content button itself.
+    return _study_stage_from_label(button.get("label", ""))
+
+
+def _append_study_stage(title: str, study_stage: str) -> str:
+    title = re.sub(r"\s+", " ", str(title or "")).strip()
+    study_stage = re.sub(r"\s+", " ", str(study_stage or "")).strip()
+    if not study_stage:
+        return title
+    grade_name = re.sub(r"^الصف\s+", "", study_stage)
+    title = re.sub(
+        rf"(?<!\S)(?:الصف\s+)?{re.escape(grade_name)}(?=\s|$|[،؛,.])",
+        " ",
+        title,
+    )
+    title = re.sub(r"\s+", " ", title).strip(" |:،؛.-")
+    return f"{title} {study_stage}".strip()
+
+
+def _note_display_name(
+    btn: dict, items: list | None = None, study_stage: str | None = None
+) -> str:
     """يبني اسم الملزمة من وصفها، ويضمّن سنة الإصدار في العنوان."""
     if items is None:
         items = _items(btn["id"])
@@ -507,7 +590,11 @@ def _note_display_name(btn: dict, items: list | None = None) -> str:
     if not title:
         title = strip_emoji(btn.get("label", ""))
 
-    return _title_with_teacher(title, teacher, year)
+    if study_stage is None:
+        study_stage = _study_stage_for_button(btn)
+    return _append_study_stage(
+        _title_with_teacher(title, teacher, year), study_stage
+    )
 
 
 def _attachment_title(item: dict, index: int) -> str:
@@ -533,7 +620,9 @@ def _file_items(items: list) -> list:
     ]
 
 
-def _attachment_display_title(item: dict, index: int, group_label: str = "") -> str:
+def _attachment_display_title(
+    item: dict, index: int, group_label: str = "", study_stage: str = ""
+) -> str:
     title = _attachment_title(item, index)
     if title == f"الملف {index}":
         title = strip_emoji(group_label) or title
@@ -542,7 +631,9 @@ def _attachment_display_title(item: dict, index: int, group_label: str = "") -> 
     teacher = _teacher_from_lines(_content_metadata_lines([item]))
     if not teacher:
         teacher = _teacher_from_lines([group_label])
-    return _title_with_teacher(title, teacher, year)
+    return _append_study_stage(
+        _title_with_teacher(title, teacher, year), study_stage
+    )
 
 
 def _independent_notes(btn: dict, items: list | None = None) -> list:
@@ -556,6 +647,7 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
         return [{**_enrich(btn), "is_attachment": False, "url": f"/note/{btn['id']}"}]
 
     cards = []
+    study_stage = _study_stage_for_button(btn)
     seen = set()
     for index, item in files:
         file_id = item["file_id"]
@@ -567,7 +659,9 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
             "id": btn["id"],
             "file_id": file_id,
             "url": _attachment_url(file_id),
-            "display_label": _attachment_display_title(item, index, btn.get("label", "")),
+            "display_label": _attachment_display_title(
+                item, index, btn.get("label", ""), study_stage
+            ),
             "subtitle": _attachment_search_subtitle(item, btn.get("label", "")),
             "thumb_url": False,
             "is_new": bool(added_at and time.time() - added_at < NEW_DAYS * 86400),
@@ -689,7 +783,8 @@ def _similar_attachments(selected: dict, limit: int = 6) -> list:
     selected_item = selected["item"]
     selected_file_id = selected_item.get("file_id")
     selected_title = _attachment_display_title(
-        selected_item, selected["index"], selected_button.get("label", "")
+        selected_item, selected["index"], selected_button.get("label", ""),
+        selected.get("record", {}).get("study_stage", ""),
     )
     selected_topics = _attachment_topic_tokens(selected_title)
     selected_teacher = _normalize_search_text(
@@ -704,7 +799,9 @@ def _similar_attachments(selected: dict, limit: int = 6) -> list:
             if not file_id or file_id == selected_file_id:
                 continue
 
-            title = _attachment_display_title(item, index, record["label"])
+            title = _attachment_display_title(
+                item, index, record["label"], record.get("study_stage", "")
+            )
             teacher = _normalize_search_text(
                 _teacher_from_lines(_content_metadata_lines([item]))
             )
@@ -837,12 +934,15 @@ def _search_index_records() -> list:
         allowed_terms = tuple(_normalize_search_text(word) for word in _CONTENT_WHITELIST)
         records = []
         attachment_records = []
+        study_stage_by_button = {}
         for btn in sorted(visible_buttons.values(), key=lambda doc: str(doc.get("id", ""))):
             if (btn.get("type") != "content"
                     or _is_bot_only_entry(btn)
                     or not _has_visible_ancestors(btn, visible_buttons)):
                 continue
 
+            study_stage = _study_stage_for_button(btn, visible_buttons)
+            study_stage_by_button[btn["id"]] = study_stage
             items = items_by_button.get(btn["id"], [])
             if not items and btn["id"] in hidden_item_buttons:
                 continue
@@ -851,7 +951,10 @@ def _search_index_records() -> list:
                 continue
             label = str(btn.get("label") or "")
             if _file_items(items):
-                attachment_records.append({"button": btn, "items": items, "label": label})
+                attachment_records.append({
+                    "button": btn, "items": items, "label": label,
+                    "study_stage": study_stage,
+                })
             normalized_label = _normalize_search_text(label)
             normalized_item_texts = [
                 _normalize_search_text(_search_item_text(item))
@@ -870,6 +973,7 @@ def _search_index_records() -> list:
                 "button": btn,
                 "items": items,
                 "label": label,
+                "study_stage": study_stage,
                 "normalized_label": normalized_label,
                 "normalized_item_texts": normalized_item_texts,
                 "aggregate_normalized": aggregate_normalized,
@@ -922,6 +1026,7 @@ def _search_index_records() -> list:
             "attachment_records": attachment_records,
             "attachment_slugs": by_file,
             "slug_files": by_slug,
+            "study_stage_by_button": study_stage_by_button,
         }
         return records
 
@@ -953,9 +1058,11 @@ def _attachment_search_subtitle(item: dict, group_label: str) -> str:
     return re.sub(r"\s+", " ", clean_group).strip(" |:،؛.-")
 
 
-def _search_note_display_name(btn: dict, items: list) -> str:
+def _search_note_display_name(
+    btn: dict, items: list, study_stage: str = ""
+) -> str:
     """يبني عنوان نتيجة البحث من أول وصف ملف محمّل مسبقاً دون استعلام إضافي."""
-    return _note_display_name(btn, items)
+    return _note_display_name(btn, items, study_stage)
 
 
 def _record_search_documents(record: dict, attachment_paths: dict | None = None) -> list:
@@ -970,7 +1077,9 @@ def _record_search_documents(record: dict, attachment_paths: dict | None = None)
     files = _file_items(items)
     if files:
         for index, item in files:
-            display_label = _attachment_display_title(item, index, label)
+            display_label = _attachment_display_title(
+                item, index, label, record.get("study_stage", "")
+            )
             # An old file must not inherit the year of its newer siblings.
             file_label = re.sub(_YEAR_RE, "", label.translate(_DIGIT_TRANSLATION))
             text = f"{file_label} {context} {common_text} {_search_item_text(item)} {display_label}"
@@ -990,7 +1099,9 @@ def _record_search_documents(record: dict, attachment_paths: dict | None = None)
                 },
             })
     else:
-        title = _search_note_display_name(btn, items)
+        title = _search_note_display_name(
+            btn, items, record.get("study_stage", "")
+        )
         text = f"{label} {context} {' '.join(_search_item_text(item) for item in items)}"
         documents.append({
             "search": search_engine.prepare(text, title),
@@ -1047,7 +1158,8 @@ def _latest_notes(limit: int = 8) -> list:
                     "file_id": item["file_id"],
                     "url": _attachment_url(item["file_id"]),
                     "display_label": _attachment_display_title(
-                        item, index, record["label"]
+                        item, index, record["label"],
+                        record.get("study_stage", ""),
                     ),
                     "subtitle": _attachment_search_subtitle(item, record["label"]),
                     "thumb_url": False,
@@ -1350,7 +1462,8 @@ def create_app() -> Flask:
         record = selected["record"]
         item = selected["item"]
         display_label = _attachment_display_title(
-            item, selected["index"], record["label"]
+            item, selected["index"], record["label"],
+            record.get("study_stage", ""),
         )
         subtitle = _attachment_search_subtitle(item, record["label"])
         similar = _similar_attachments(selected)

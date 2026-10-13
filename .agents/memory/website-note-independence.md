@@ -33,8 +33,8 @@ Student/community Telegram group entries, including their nested pages, must rem
 
 **How to apply:** Filter group entries from website navigation, search, and direct pages, while retaining their database records and bot visibility.
 
-Each material's main title must include its teacher, followed by the publication year and then the part/chapter when available; do not leave the teacher only in small subtitle text.
+Each material's main title must include its teacher, followed by the publication year and then the part/chapter when available; append its school grade/stage as the final suffix.
 
-**Why:** The user asked for titles such as «ملزمة الكيمياء للأستاذ فلان 2026 الجزء الفلاني».
+**Why:** The user asked for the teacher and grade to be clear in every material title, with the grade last, such as «ملزمة الكيمياء للأستاذ فلان 2026 الجزء الفلاني الصف السادس العلمي».
 
-**How to apply:** Keep primary labels consistent across listing cards, search results, recommendations, and the file detail heading. Keep subtitles for category context and avoid repeating the teacher there.
+**How to apply:** Keep primary labels consistent across listing cards, search results, recommendations, and the file detail heading. Derive the grade from its menu ancestry, keep subtitles for category context, and avoid changing canonical attachment slugs when only the displayed title changes.
