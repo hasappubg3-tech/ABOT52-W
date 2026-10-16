@@ -2710,9 +2710,14 @@ async def cb_manage(update: Update, ctx):
         return
 
     # ── تفعيل/إلغاء الترتيب الأبجدي لأزرار القائمة ─────────────────
-    if d.startswith("menu_sort_toggle_"):
-        bid = int(d[len("menu_sort_toggle_"):])
-        toggle_sort_alpha(bid)
+    if d.startswith(("menu_sort_toggle_", "menu_demand_toggle_")):
+        demand_toggle = d.startswith("menu_demand_toggle_")
+        prefix = "menu_demand_toggle_" if demand_toggle else "menu_sort_toggle_"
+        bid = int(d[len(prefix):])
+        if demand_toggle:
+            toggle_sort_demand(bid)
+        else:
+            toggle_sort_alpha(bid)
         b = get_btn(bid)
         # نحدد اللوحة الصحيحة لإعادة رسمها حسب مصدر الضغط (لوحة سريعة أم لوحة إدارة)
         is_edit_panel = False

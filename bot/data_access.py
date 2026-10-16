@@ -410,14 +410,53 @@ def toggle_sort_alpha(bid, _sync=True):
     b = get_btn(bid)
     if not b:
         return False
-    current = b.get("sort_alpha", 0) or 0
+    current = bool(b.get("sort_alpha", 0)) and not menu_sort_by_demand(b)
     new_val = 0 if current else 1
-    _col("buttons").update_one({"id": bid}, {"$set": {"sort_alpha": new_val}})
+    values = {"sort_alpha": new_val}
+    if new_val:
+        values["sort_demand"] = 0
+    _col("buttons").update_one({"id": bid}, {"$set": values})
     if _sync:
         twin = get_twin(bid)
         if twin is not None:
-            _col("buttons").update_one({"id": twin}, {"$set": {"sort_alpha": new_val}})
+            _col("buttons").update_one({"id": twin}, {"$set": values})
     return bool(new_val)
+
+def menu_sort_by_demand(button):
+    """Material/subject menus default to demand order unless explicitly changed."""
+    if not button or button.get("type") != "menu":
+        return False
+    if "sort_demand" in button:
+        return bool(button["sort_demand"])
+    label = button.get("label", "").replace("\u0640", "")
+    if "ملازم" in label:
+        return True
+    parent_id = button.get("parent_id")
+    parent = get_btn(parent_id) if parent_id is not None else None
+    return bool(parent and "ملازم" in parent.get("label", "").replace("\u0640", ""))
+
+def toggle_sort_demand(bid, _sync=True):
+    button = get_btn(bid)
+    if not button or button.get("type") != "menu":
+        return False
+    enabled = not menu_sort_by_demand(button)
+    values = {"sort_demand": int(enabled)}
+    if enabled:
+        values["sort_alpha"] = 0
+    _col("buttons").update_one({"id": bid}, {"$set": values})
+    if _sync:
+        twin = get_twin(bid)
+        if twin is not None:
+            _col("buttons").update_one({"id": twin}, {"$set": values})
+    return enabled
+
+def record_student_button_press(button, uid):
+    """Count repeated student selections without changing unique-download stats."""
+    if uid and not is_real_admin(uid):
+        _col("buttons").update_one(
+            {"id": button["id"], "deleted": {"$ne": 1}},
+            {"$inc": {"demand_clicks": 1}},
+        )
 
 def del_btn(bid, _sync=True):
     _soft_delete_btn_recursive(bid)

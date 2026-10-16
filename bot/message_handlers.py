@@ -2743,6 +2743,8 @@ async def on_message(update: Update, ctx):
         await m.reply_text(msg)
         return
 
+    record_student_button_press(b, uid)
+
     if b["type"] == "menu":
         ctx.user_data["pid"] = b["id"]
         # إرسال اسم القسم بإيموجي متحرك عبر Pyrogram إن أمكن

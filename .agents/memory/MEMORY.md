@@ -12,6 +12,7 @@
 - [Automatic material-title style](mlz-label-style.md) — type + year + selected custom emoji once at the end; no pin-wrapped names.
 - [School-stage menu layout](school-stage-menu-layout.md) — primary and middle school grades are grouped in their own sections; automatic uploads must not assume grades are root menus.
 - [Study-material teacher emojis](material-parent-emoji.md) — teacher folders inherit their subject's custom emoji only inside the «ملازم» sections.
+- [Material demand ordering](material-demand-order.md) — material/subject menus default to repeated student-press ranking; preserve explicit admin overrides and existing download statistics.
 - [Telegram file verification](telegram-file-verification.md) — getFile download-size errors do not mean a stored document cannot be delivered.
 - [Mini App keyboard focus](mini-app-keyboard-focus.md) — opening and focusing search does not guarantee that Telegram shows the phone keyboard.
 - [Telegram reply keyboard visibility](telegram-reply-keyboard-visibility.md) — keep controls non-persistent; unmatched student text restores the current menu without moving the student elsewhere.

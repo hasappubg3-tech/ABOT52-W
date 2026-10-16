@@ -181,6 +181,11 @@ def _sort_alpha_children(children: list) -> list:
         result.append(ch_copy)
     return result
 
+def _sort_demand_children(children: list) -> list:
+    # Stable sorting retains manual order for ties; never modify stored rows.
+    ordered = sorted(children, key=lambda ch: -(ch.get("demand_clicks", 0) or 0))
+    return [dict(ch, new_row=int(i % 2 == 0)) for i, ch in enumerate(ordered)]
+
 
 # ── فلتر الملازم ──────────────────────────────────────────────────────────
 _mlz_filters: dict = {}  # (uid, pid) → كلمة الفلتر النشط
@@ -304,7 +309,9 @@ def build_kb(uid, pid=None):
     else:
         btns = get_buttons(pid)
     parent_b = get_btn(pid) if pid is not None else None
-    if parent_b and parent_b.get("sort_alpha", 0) and btns:
+    if menu_sort_by_demand(parent_b) and btns:
+        btns = _sort_demand_children(btns)
+    elif parent_b and parent_b.get("sort_alpha", 0) and btns:
         btns = _sort_alpha_children(btns)
 
     # ── فلتر الملازم: تصفية المدرسين حسب نوع الملف المختار ─────────────
@@ -783,9 +790,12 @@ def kb_edit_menu_btn(bid):
         [InlineKeyboardButton("✏️ تغيير الاسم", callback_data=f"el_{bid}")],
     ]
     if b:
-        sort_on = bool(b.get("sort_alpha", 0))
+        demand_on = menu_sort_by_demand(b)
+        sort_on = bool(b.get("sort_alpha", 0)) and not demand_on
         sort_label = "🔤 ترتيب أبجدي: ✅ مفعّل" if sort_on else "🔤 ترتيب أبجدي: ⭕ مُلغى"
         rows.append([InlineKeyboardButton(sort_label, callback_data=f"menu_sort_toggle_{bid}")])
+        demand_label = "📊 ترتيب حسب الطلب: ✅ مفعّل" if demand_on else "📊 ترتيب حسب الطلب: ⭕ مُلغى"
+        rows.append([InlineKeyboardButton(demand_label, callback_data=f"menu_demand_toggle_{bid}")])
     rows.append([InlineKeyboardButton("🗑 حذف",          callback_data=f"confirm_x_{bid}")])
     pid = b["parent_id"] if b else None
     rows.append([InlineKeyboardButton("رجوع", callback_data="m_r" if pid is None else f"m_{pid}")])
@@ -946,9 +956,12 @@ def kb_menu_quick(bid):
     ]
     if b:
         rows.append(_hidden_toggle_row(b))
-        sort_on = bool(b.get("sort_alpha", 0))
+        demand_on = menu_sort_by_demand(b)
+        sort_on = bool(b.get("sort_alpha", 0)) and not demand_on
         sort_label = "🔤 الترتيب الأبجدي: ✅ مفعّل" if sort_on else "🔤 الترتيب الأبجدي: ⭕ مُلغى"
         rows.append([InlineKeyboardButton(sort_label, callback_data=f"menu_sort_toggle_{bid}")])
+        demand_label = "📊 ترتيب حسب الطلب: ✅ مفعّل" if demand_on else "📊 ترتيب حسب الطلب: ⭕ مُلغى"
+        rows.append([InlineKeyboardButton(demand_label, callback_data=f"menu_demand_toggle_{bid}")])
         for r in _maintenance_rows(b): rows.append(r)
     rows.append([InlineKeyboardButton("🗑 حذف", callback_data=f"confirm_x_{bid}")])
     if len(siblings) >= 2:
