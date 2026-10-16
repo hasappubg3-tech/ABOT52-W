@@ -423,14 +423,14 @@ def toggle_sort_alpha(bid, _sync=True):
     return bool(new_val)
 
 def menu_sort_by_demand(button):
-    """Material/subject menus default to demand order unless explicitly changed."""
+    """Only subject menus inside materials default to demand order."""
     if not button or button.get("type") != "menu":
         return False
     if "sort_demand" in button:
         return bool(button["sort_demand"])
     label = button.get("label", "").replace("\u0640", "")
     if "ملازم" in label:
-        return True
+        return False
     parent_id = button.get("parent_id")
     parent = get_btn(parent_id) if parent_id is not None else None
     return bool(parent and "ملازم" in parent.get("label", "").replace("\u0640", ""))

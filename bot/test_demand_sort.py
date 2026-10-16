@@ -15,7 +15,7 @@ class DemandSortTests(unittest.TestCase):
         subject = {"id": 21, "type": "menu", "label": "العربي", "parent_id": 20,
                    "sort_alpha": 1}
         with patch.object(da, "get_btn", return_value=materials):
-            self.assertTrue(da.menu_sort_by_demand(materials))
+            self.assertFalse(da.menu_sort_by_demand(materials))
             self.assertTrue(da.menu_sort_by_demand(subject))
         self.assertFalse(da.menu_sort_by_demand(dict(subject, sort_demand=0)))
         self.assertFalse(da.menu_sort_by_demand({"type": "compound", "label": "ملازم"}))
@@ -40,8 +40,8 @@ class DemandSortTests(unittest.TestCase):
         self.assertEqual(ordered[0]["label_emojis"], {"📗": "123"})
         self.assertEqual(buttons[0]["new_row"], 0)
 
-    def test_student_keyboard_uses_demand_before_old_alpha_setting(self):
-        parent = {"id": 20, "type": "menu", "label": "ملازم", "sort_alpha": 1}
+    def test_student_keyboard_preserves_material_menu_previous_sort(self):
+        parent = {"id": 20, "type": "menu", "label": "الملازم", "sort_alpha": 1}
         children = [
             {"id": 21, "type": "menu", "label": "العربي", "demand_clicks": 1, "label_emojis": {}},
             {"id": 22, "type": "menu", "label": "الكيمياء", "demand_clicks": 8, "label_emojis": {}},
@@ -54,9 +54,21 @@ class DemandSortTests(unittest.TestCase):
                 patch.object(kb, "_is_mlazm_subject", return_value=False), \
                 patch.object(kb, "get_mlz_parent_emoji_style", return_value={}), \
                 patch.object(kb, "has_permission", return_value=False):
+            for alpha in (0, 1):
+                parent["sort_alpha"] = alpha
+                markup = kb.build_kb(500, pid=20)
+                labels = [
+                    kb._strip_bid_markers(b.text)
+                    for row in markup.keyboard for b in row
+                ]
+                material_labels = [label for label in labels if label in ("العربي", "الكيمياء")]
+                self.assertEqual(material_labels, ["العربي", "الكيمياء"])
+            parent.update(label="الفيزياء", sort_demand=1, sort_alpha=1)
             markup = kb.build_kb(500, pid=20)
-        labels = [kb._strip_bid_markers(b.text) for b in markup.keyboard[0]]
-        self.assertEqual(labels, ["الكيمياء", "العربي"])
+            self.assertEqual(
+                [kb._strip_bid_markers(b.text) for b in markup.keyboard[0]],
+                ["الكيمياء", "العربي"],
+            )
 
     def test_enable_demand_disables_alpha_and_syncs_twin(self):
         collection = Mock()
@@ -70,10 +82,11 @@ class DemandSortTests(unittest.TestCase):
                 {"id": bid}, {"$set": {"sort_demand": 1, "sort_alpha": 0}}
             )
 
-    def test_alpha_overrides_automatic_material_default(self):
+    def test_alpha_overrides_demand_setting(self):
         collection = Mock()
         with patch.object(da, "get_btn", return_value={
-            "id": 5, "type": "menu", "label": "ملازم", "sort_alpha": 1
+            "id": 5, "type": "menu", "label": "الكيمياء", "sort_alpha": 1,
+            "sort_demand": 1
         }), patch.object(da, "_col", return_value=collection), \
                 patch.object(da, "get_twin", return_value=None):
             self.assertTrue(da.toggle_sort_alpha(5))
@@ -84,7 +97,7 @@ class DemandSortTests(unittest.TestCase):
     def test_disabling_demand_does_not_restore_alpha(self):
         collection = Mock()
         with patch.object(da, "get_btn", return_value={
-            "id": 5, "type": "menu", "label": "ملازم"
+            "id": 5, "type": "menu", "label": "الكيمياء", "sort_demand": 1
         }), patch.object(da, "_col", return_value=collection):
             self.assertFalse(da.toggle_sort_demand(5, _sync=False))
         collection.update_one.assert_called_once_with(
@@ -108,7 +121,8 @@ class DemandSortTests(unittest.TestCase):
         collection.update_one.assert_not_called()
 
     def test_both_admin_panels_show_new_control_and_inactive_alpha(self):
-        button = {"id": 5, "type": "menu", "label": "ملازم", "parent_id": None}
+        button = {"id": 5, "type": "menu", "label": "الكيمياء",
+                  "sort_demand": 1, "parent_id": None}
         with patch.object(kb, "get_btn", return_value=button), \
                 patch.object(kb, "get_buttons", return_value=[]):
             for panel in (kb.kb_edit_menu_btn, kb.kb_menu_quick):
