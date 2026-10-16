@@ -411,6 +411,28 @@ def _extract_label_emojis(m) -> dict:
             result[fb] = e.custom_emoji_id
     return result
 
+def _inherit_new_button_emoji(text, label_emojis, parent_id, button_type):
+    """Prefer the subject's custom icon for new teacher folders in study materials."""
+    if label_emojis:
+        return text, label_emojis
+
+    if button_type == "compound":
+        from .keyboards import get_mlz_parent_emoji_style
+        inherited = get_mlz_parent_emoji_style(parent_id)
+        if inherited:
+            return text, inherited
+
+    # Keep the existing same-sibling heuristic as a fallback for other buttons.
+    from .data_access import get_emoji_similarity_enabled, get_sibling_emoji_hint
+    if get_emoji_similarity_enabled():
+        hint = get_sibling_emoji_hint(parent_id)
+        if hint:
+            if hint.get("_regular"):
+                text = hint.get("prefix", "") + text + hint.get("suffix", "")
+            else:
+                label_emojis = hint
+    return text, label_emojis
+
 async def on_message(update: Update, ctx):
     m = update.message
     # Storage-channel posts have no human effective_user and are not button presses.
@@ -858,21 +880,7 @@ async def on_message(update: Update, ctx):
         _le = _extract_label_emojis(m)
         t = ctx.user_data.get("new_type")
 
-        # ── ميزة التشابه: إيموجي تلقائي من الإخوة ──────────────────
-        if not _le:
-            from bot.data_access import get_emoji_similarity_enabled, get_sibling_emoji_hint
-            if get_emoji_similarity_enabled():
-                hint = get_sibling_emoji_hint(add_pid)
-                if hint:
-                    if hint.get("_regular"):
-                        # إيموجي عادي: أضفه للنص مباشرةً
-                        pre = hint.get("prefix", "")
-                        suf = hint.get("suffix", "")
-                        text = pre + text + suf
-                    else:
-                        # إيموجي مخصص: ضعه في label_emojis
-                        _le = hint
-        # ────────────────────────────────────────────────────────────
+        text, _le = _inherit_new_button_emoji(text, _le, add_pid, t)
 
         if add_before is not None:
             bid = add_btn_before(add_before, add_pid, t, text, label_emojis=_le)

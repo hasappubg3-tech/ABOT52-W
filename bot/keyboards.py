@@ -38,6 +38,15 @@ def _kb_emoji_id(label: str):
             return eid
     return None
 
+def _kb_emoji_style(label: str):
+    """Returns the saved fallback-to-custom-emoji style present in a label."""
+    if _ktime.time() - _emoji_cache_ts > _EMOJI_CACHE_TTL:
+        _refresh_emoji_cache()
+    for char, eid in _emoji_cache.items():
+        if char in label:
+            return {char: eid}
+    return {}
+
 def _strip_known_emojis(label: str) -> str:
     """يحذف رموز الإيموجي المحفوظة (الـ fallback) من نص الزر ويُنظّف المسافات الزائدة."""
     result = label
@@ -214,6 +223,18 @@ def _is_mlazm_subject(pid) -> bool:
     except Exception:
         return False
 
+def get_mlz_parent_emoji_style(pid) -> dict:
+    """Custom icon used by a subject button, for its teacher buttons only."""
+    if not _is_mlazm_subject(pid):
+        return {}
+    parent = get_btn(pid)
+    if not parent:
+        return {}
+    style = parent.get("label_emojis")
+    if style is not None:
+        return dict(style) if isinstance(style, dict) else {}
+    return _kb_emoji_style(parent.get("label", ""))
+
 _ARABIC_WORD_RE = _re.compile(r'[\u0600-\u06FF]+')
 
 def _extract_file_type(label: str) -> str:
@@ -302,6 +323,11 @@ def build_kb(uid, pid=None):
                            for _f in _files if _f.get("type") == "content"):
                         _filtered.append(_b)
             btns = _filtered
+    _mlz_parent_emoji_style = (
+        get_mlz_parent_emoji_style(pid)
+        if any(b.get("type") == "compound" and not b.get("label_emojis") for b in btns)
+        else {}
+    )
     rows = []
     current_row = []
     last_bid_in_row = None
@@ -333,6 +359,9 @@ def build_kb(uid, pid=None):
             else:
                 label = f"🟡{label}🟡"
         _btn_le = b.get('label_emojis')  # None=قديم, {}=عادي, {char:id}=مخصص
+        if (not _btn_le and b.get("type") == "compound"
+                and _mlz_parent_emoji_style):
+            _btn_le = _mlz_parent_emoji_style
         if _btn_le is None:
             # زر قديم بدون label_emojis → استخدم القاموس العام
             _eid = _kb_emoji_id(b['label'])
