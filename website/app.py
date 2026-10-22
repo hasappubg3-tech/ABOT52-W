@@ -12,7 +12,7 @@ from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta
 from threading import Lock
 import requests as _req
-from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash
+from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash, g, has_request_context
 from pymongo.errors import PyMongoError
 from . import feedback as feedback_store
 from . import search as search_engine
@@ -100,18 +100,32 @@ _CONTENT_WHITELIST = ["ملزمة", "ملزمه", "كتاب", "ملخص"]
 
 def _is_grade_menu(btn: dict) -> bool:
     """يُعيد True إذا كانت القائمة تمثّل صفاً دراسياً."""
+    if _is_stage_menu(btn):
+        return False
     label = _clean(btn.get("label", ""))
     return any(kw in label for kw in _GRADE_KEYWORDS)
+
+def _is_stage_menu(btn: dict) -> bool:
+    """Bot-only grouping folders; individual grades remain website categories."""
+    label = " ".join(re.findall(r"\w+", _normalize_search_text(btn.get("label", ""))))
+    return bool(re.fullmatch(
+        r"(?:(?:المرحلة|المرحله|مرحلة|مرحله)\s+)?(?:ال)?"
+        r"(?:ابتدائي[ةه]?|متوسط[ةه]?)", label
+    ))
+
+def _is_model_answers(btn: dict) -> bool:
+    label = _normalize_search_text(btn.get("label", "")).replace("ة", "ه")
+    return bool(re.search(r"(?:اجوبه|اجابات)\s+(?:ال)?نموذجيه", label))
 
 def _is_allowed_menu(btn: dict) -> bool:
     """يُعيد True إذا كانت القائمة الفرعية تنتمي لملازم/كتب/ملخصات فقط."""
     label = _clean(btn.get("label", ""))
-    return any(kw in label for kw in _MENU_WHITELIST)
+    return any(kw in label for kw in _MENU_WHITELIST) or _is_model_answers(btn)
 
 def _is_allowed_content(btn: dict) -> bool:
     """يُعيد True فقط إذا كانت التسمية تنتمي لملزمة أو كتاب أو ملخص."""
     label = _clean(btn.get("label", ""))
-    return any(kw in label for kw in _CONTENT_WHITELIST)
+    return any(kw in label for kw in _CONTENT_WHITELIST) or _is_model_answers(btn)
 _PDF_THUMB_DIR  = "/tmp/pdf_thumbs"
 _PDF_THUMB_TTL  = 86400   # يوم كامل
 
@@ -230,6 +244,53 @@ def _children(pid):
     buttons = _col("buttons").find(q).sort([("ord", 1), ("id", 1)])
     return [button for button in buttons if not _is_bot_only_entry(button)]
 
+def _website_grades():
+    """Flatten visible stage folders without changing the underlying bot tree."""
+    if has_request_context() and hasattr(g, "website_grades"):
+        return g.website_grades
+    grades, visited = [], set()
+
+    def collect(parent_id):
+        for button in _children(parent_id):
+            if button["id"] in visited or button.get("type") == "content":
+                continue
+            visited.add(button["id"])
+            if _is_stage_menu(button):
+                collect(button["id"])
+            elif _is_grade_menu(button):
+                grades.append(button)
+
+    collect(None)
+    if has_request_context():
+        g.website_grades = grades
+    return grades
+
+def _model_answer_sections(grade_id):
+    """Expose real answer sections even when the bot groups them under Other."""
+    sections = []
+    candidates = _col("buttons").find({
+        "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
+        "type": {"$ne": "content"},
+        "label": {"$regex": "ج.*(?:و.*ب|ا.*ب)"},
+    }).sort([("ord", 1), ("id", 1)])
+    for button in candidates:
+        if not _is_model_answers(button):
+            continue
+        parent_id = button.get("parent_id")
+        visited = {button["id"]}
+        while parent_id is not None and parent_id not in visited:
+            if parent_id == grade_id:
+                sections.append(button)
+                break
+            visited.add(parent_id)
+            parent = _col("buttons").find_one({
+                "id": parent_id, "deleted": {"$ne": 1}, "hidden": {"$ne": 1},
+            })
+            if not parent or _is_bot_only_entry(parent) or _is_grade_menu(parent):
+                break
+            parent_id = parent.get("parent_id")
+    return sections
+
 
 def _items(bid: int):
     items = [
@@ -263,11 +324,14 @@ def _feedback_context(button, item=None):
 def _breadcrumb(bid: int) -> list:
     path = []
     current = bid
-    while current is not None:
+    visited = set()
+    while current is not None and current not in visited:
+        visited.add(current)
         doc = _col("buttons").find_one({"id": current})
         if not doc:
             break
-        path.append({"id": doc["id"], "label": doc.get("label", "")})
+        if not _is_stage_menu(doc):
+            path.append({"id": doc["id"], "label": doc.get("label", "")})
         current = doc.get("parent_id")
     path.reverse()
     return path
@@ -702,7 +766,7 @@ def _find_visible_attachment(file_id: str) -> dict | None:
                 or _is_bot_only_entry(button)):
             continue
 
-        root = button
+        grade_found = _is_grade_menu(button)
         parent_id = button.get("parent_id")
         visited = {bid}
         visible_path = True
@@ -717,10 +781,10 @@ def _find_visible_attachment(file_id: str) -> dict | None:
             if not parent or _is_bot_only_entry(parent):
                 visible_path = False
                 break
-            root = parent
+            grade_found = grade_found or _is_grade_menu(parent)
             parent_id = parent.get("parent_id")
 
-        if not visible_path or not _is_grade_menu(root):
+        if not visible_path or not grade_found:
             continue
 
         items = _items(bid)
@@ -963,9 +1027,15 @@ def _search_index_records() -> list:
             aggregate_normalized = " ".join(
                 [normalized_label, *normalized_item_texts]
             )
+            context = []
+            parent_id = btn.get("parent_id")
+            while parent_id is not None:
+                parent = visible_buttons[parent_id]
+                context.append(str(parent.get("label") or ""))
+                parent_id = parent.get("parent_id")
             allowed = _is_allowed_content(btn) or any(
                 term in aggregate_normalized for term in allowed_terms
-            )
+            ) or any(_is_model_answers({"label": label}) for label in context)
             if not allowed:
                 continue
 
@@ -978,12 +1048,6 @@ def _search_index_records() -> list:
                 "normalized_item_texts": normalized_item_texts,
                 "aggregate_normalized": aggregate_normalized,
             })
-            context = []
-            parent_id = btn.get("parent_id")
-            while parent_id is not None:
-                parent = visible_buttons[parent_id]
-                context.append(str(parent.get("label") or ""))
-                parent_id = parent.get("parent_id")
             records[-1]["search_context"] = " ".join(context)
 
         # Reserve names from hidden/deleted source files without exposing their pages.
@@ -1223,6 +1287,14 @@ def create_app() -> Flask:
     )
     app.jinja_env.filters["strip_emoji"] = strip_emoji
 
+    @app.context_processor
+    def website_navigation():
+        return {
+            # API error pages must not query the catalogue to report an error.
+            "navigation_grades": [] if request.path.startswith("/api/") else _website_grades(),
+            "navigation_bot_username": BOT_USERNAME,
+        }
+
     @app.before_request
     def check_database_configuration():
         if request.endpoint != "static" and not os.environ.get("MONGODB_URI"):
@@ -1300,8 +1372,7 @@ def create_app() -> Flask:
     @app.route("/")
     def index():
         # الصفحة الرئيسية: فقط القوائم التي تمثّل صفوفاً دراسية
-        categories = [c for c in _children(None)
-                      if c.get("type") != "content" and _is_grade_menu(c)]
+        categories = _website_grades()
         latest     = _latest_notes(8)
         return render_template("index.html",
             categories=categories,
@@ -1340,11 +1411,13 @@ def create_app() -> Flask:
             children = _children(bid)
         if btn.get("type") == "compound" and btn.get("sort_by_year", 0):
             children = sorted(children, key=_compound_sort_key)
-        # نُطبّق فلتر القوائم فقط إذا كنا مباشرةً داخل صف دراسي (parent_id=None)
-        # في المستويات الأعمق (داخل ملازم/كتب/ملخصات) نعرض كل شيء
-        if btn.get("parent_id") is None:
+        # A grade can live inside a bot stage folder, not only at the root.
+        if _is_grade_menu(btn):
             menus = [c for c in children if c.get("type") != "content"
                      and _is_allowed_menu(c)]
+            existing = {menu["id"] for menu in menus}
+            menus.extend(section for section in _model_answer_sections(bid)
+                         if section["id"] not in existing)
         else:
             menus = [c for c in children if c.get("type") != "content"]
         contents = []
@@ -1671,6 +1744,7 @@ def create_app() -> Flask:
         }
         for button in sorted(buttons.values(), key=lambda item: item["id"]):
             if (button.get("type") != "content"
+                    and not _is_stage_menu(button)
                     and not _is_bot_only_entry(button)
                     and _has_visible_ancestors(button, buttons)):
                 add_url(url_for("category", bid=button["id"]), "weekly", "0.8")

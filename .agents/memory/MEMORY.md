@@ -11,6 +11,7 @@
 - [Telegram admin role policy](admin-role-policy.md) — AI-upload-only supervisors act as members; button management is separate from bot settings; preserve legacy access until configured.
 - [Automatic material-title style](mlz-label-style.md) — type + year + selected custom emoji once at the end; no pin-wrapped names.
 - [School-stage menu layout](school-stage-menu-layout.md) — primary and middle school grades are grouped in their own sections; automatic uploads must not assume grades are root menus.
+- [Website grade navigation](website-grade-navigation.md) — flatten bot stage folders on the website; expose sixth-scientific model answers from the shared bot tree.
 - [Study-material teacher emojis](material-parent-emoji.md) — teacher folders inherit their subject's custom emoji only inside the «ملازم» sections.
 - [Material demand ordering](material-demand-order.md) — only subject menus default to student-press ranking; «الملازم» menus retain their previous order.
 - [Telegram file verification](telegram-file-verification.md) — getFile download-size errors do not mean a stored document cannot be delivered.
