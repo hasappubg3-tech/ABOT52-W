@@ -145,12 +145,12 @@
 }
 .navigation-external { width: 15px; height: 15px; }
 .navigation-group {
-  padding: .38rem;
-  background: rgba(245, 242, 235, .72);
-  border: 1px solid var(--border);
-  border-radius: 15px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
-.navigation-group-toggle { min-height: 48px; }
+.navigation-group-toggle { min-height: 54px; }
 .navigation-disclosure {
   flex: 0 0 17px;
   width: 17px;

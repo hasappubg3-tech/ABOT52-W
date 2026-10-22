@@ -15,7 +15,7 @@
       <div class="cat-grid">
         {% for cat in categories %}
         <a href="/cat/{{ cat.id }}" class="cat-card">
-          <span class="cat-label">{{ cat.label | strip_emoji }}</span>
+          <span class="cat-label">{{ cat.label | grade_display_label }}</span>
           <span class="cat-arrow">←</span>
         </a>
         {% endfor %}

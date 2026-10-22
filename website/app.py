@@ -113,6 +113,12 @@ def _is_stage_menu(btn: dict) -> bool:
         r"(?:ابتدائي[ةه]?|متوسط[ةه]?)", label
     ))
 
+def _grade_display_label(label: str) -> str:
+    """Display grade names without their numeric ordering markers."""
+    clean = strip_emoji(label)
+    clean = re.sub(r"[0-9٠-٩۰-۹]+", "", clean)
+    return re.sub(r"[\s\-–—_]+", " ", clean).strip()
+
 def _is_model_answers(btn: dict) -> bool:
     label = _normalize_search_text(btn.get("label", "")).replace("ة", "ه")
     return bool(re.search(r"(?:اجوبه|اجابات)\s+(?:ال)?نموذجيه", label))
@@ -1286,6 +1292,7 @@ def create_app() -> Flask:
         MAX_CONTENT_LENGTH=32 * 1024,
     )
     app.jinja_env.filters["strip_emoji"] = strip_emoji
+    app.jinja_env.filters["grade_display_label"] = _grade_display_label
 
     @app.context_processor
     def website_navigation():

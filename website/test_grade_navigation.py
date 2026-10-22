@@ -10,6 +10,16 @@ from website.test_seo import SeoCollection
 
 
 class GradeNavigationTests(unittest.TestCase):
+    def test_grade_display_removes_ordering_numbers_only_from_visible_label(self):
+        for raw, expected in [
+            ("السادس العلمي 6️⃣", "السادس العلمي"),
+            ("الاول المتوسط 1", "الاول المتوسط"),
+            ("الصف ٦ الابتدائي", "الصف الابتدائي"),
+            ("السادس العلمي", "السادس العلمي"),
+        ]:
+            with self.subTest(raw=raw):
+                self.assertEqual(web._grade_display_label(raw), expected)
+
     def setUp(self):
         self.db = defaultdict(SeoCollection)
         for button in [
@@ -52,6 +62,8 @@ class GradeNavigationTests(unittest.TestCase):
         self.assertEqual(cards, ["2", "4", "5"])
         self.assertNotIn("المرحلة الابتدائية", html)
         self.assertNotIn("المرحلة المتوسطة", html)
+        self.assertIn("الثالث المتوسط", html)
+        self.assertNotIn("الثالث المتوسط 3", html)
         self.assertEqual(self.db["buttons"].find_one({"id": 2})["parent_id"], 1)
 
     def test_new_grade_appears_on_next_request_without_a_restart(self):
