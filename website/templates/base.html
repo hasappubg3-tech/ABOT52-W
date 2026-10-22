@@ -120,12 +120,14 @@
           <span>المراحل الدراسية</span>
           <svg class="navigation-disclosure" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
         </button>
-        <div class="navigation-grade-list" id="navigation-grades" hidden>
-          {% for grade in navigation_grades | default([], true) %}
-          <a class="navigation-grade-link" href="{{ url_for('category', bid=grade.id) }}">{{ grade.label | strip_emoji }}</a>
-          {% else %}
-          <p class="navigation-empty">لا توجد مراحل متاحة حالياً.</p>
-          {% endfor %}
+        <div class="navigation-grade-list" id="navigation-grades" aria-hidden="true" inert>
+          <div class="navigation-grade-list-inner">
+            {% for grade in navigation_grades | default([], true) %}
+            <a class="navigation-grade-link" href="{{ url_for('category', bid=grade.id) }}">{{ grade.label | strip_emoji }}</a>
+            {% else %}
+            <p class="navigation-empty">لا توجد مراحل متاحة حالياً.</p>
+            {% endfor %}
+          </div>
         </div>
       </div>
 

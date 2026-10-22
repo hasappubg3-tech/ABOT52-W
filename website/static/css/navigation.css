@@ -14,10 +14,12 @@
   z-index: 1400;
   pointer-events: none;
   visibility: hidden;
+  transition: visibility 0s linear 400ms;
 }
 .navigation-layer.is-open {
   pointer-events: auto;
   visibility: visible;
+  transition-delay: 0s;
 }
 .navigation-backdrop {
   position: absolute;
@@ -26,7 +28,7 @@
   height: 100%;
   background: rgba(24, 20, 10, .48);
   opacity: 0;
-  transition: opacity .24s ease;
+  transition: opacity 390ms ease;
   cursor: default;
 }
 .navigation-layer.is-open .navigation-backdrop { opacity: 1; }
@@ -37,18 +39,18 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(430px, 100%);
+  width: min(430px, 86vw);
+  max-height: 100vh;
   max-height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   padding: clamp(1.25rem, 4vw, 2.1rem);
-  background:
-    radial-gradient(ellipse at 100% 0%, rgba(201, 162, 39, .13), transparent 46%),
-    var(--surface);
+  background: var(--site-background);
   border-left: 1px solid var(--gold-border);
   box-shadow: -18px 0 54px rgba(32, 26, 10, .18);
   transform: translate3d(102%, 0, 0);
-  transition: transform .28s cubic-bezier(.2, .75, .25, 1);
+  transition: transform 400ms cubic-bezier(.22, .78, .22, 1);
   outline: none;
 }
 .navigation-layer.is-open .navigation-drawer { transform: translate3d(0, 0, 0); }
@@ -160,11 +162,23 @@
 .navigation-group-toggle[aria-expanded="false"] .navigation-disclosure { transform: rotate(90deg); }
 .navigation-grade-list {
   display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 300ms cubic-bezier(.2, .7, .25, 1), opacity 220ms ease;
+}
+.navigation-grade-list.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.navigation-grade-list-inner {
+  display: grid;
   grid-template-columns: 1fr 1fr;
+  align-content: start;
   gap: .4rem;
+  min-height: 0;
+  overflow: hidden;
   padding: .25rem .35rem .4rem;
 }
-.navigation-grade-list[hidden] { display: none; }
 .navigation-grade-link {
   display: flex;
   align-items: center;
@@ -207,6 +221,7 @@
 
 @media (max-width: 480px) {
   .navigation-drawer {
+    width: min(430px, 86vw);
     padding: 1.2rem 1rem max(1.2rem, env(safe-area-inset-bottom));
     border-left: 0;
   }
@@ -221,4 +236,6 @@
   .navigation-disclosure {
     transition-duration: .01ms;
   }
+  .navigation-layer { transition-duration: .01ms; transition-delay: 0s; }
+  .navigation-grade-list { transition-duration: .01ms; }
 }

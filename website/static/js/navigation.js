@@ -90,7 +90,9 @@
     unlockPageScroll();
     if (restoreFocus) {
       requestAnimationFrame(() => {
-        if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
+        if (!layer.classList.contains('is-open') && previousFocus instanceof HTMLElement) {
+          previousFocus.focus({ preventScroll: true });
+        }
       });
     }
   }
@@ -103,7 +105,11 @@
     }
     if (event.key !== 'Tab') return;
     const controls = [...drawer.querySelectorAll(focusableSelector)]
-      .filter(element => element.getClientRects().length && !element.closest('[hidden]'));
+      .filter(element =>
+        element.getClientRects().length &&
+        !element.closest('[hidden]') &&
+        !element.closest('[inert]')
+      );
     if (!controls.length) {
       event.preventDefault();
       drawer.focus();
@@ -126,8 +132,13 @@
   groupToggle?.addEventListener('click', () => {
     const expanded = groupToggle.getAttribute('aria-expanded') === 'true';
     if (expanded && gradeList?.contains(document.activeElement)) groupToggle.focus();
-    groupToggle.setAttribute('aria-expanded', String(!expanded));
-    if (gradeList) gradeList.hidden = expanded;
+    const shouldExpand = !expanded;
+    groupToggle.setAttribute('aria-expanded', String(shouldExpand));
+    if (gradeList) {
+      gradeList.classList.toggle('is-expanded', shouldExpand);
+      gradeList.setAttribute('aria-hidden', String(!shouldExpand));
+      gradeList.inert = !shouldExpand;
+    }
   });
   layer.querySelector('.navigation-search')?.addEventListener('click', (event) => {
     // Keep the site's outside-click handler from immediately closing search.
