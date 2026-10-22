@@ -121,7 +121,7 @@ def format_answer_title(context, metadata, study_stage=""):
                 continue
             details.append(_detail_name(key))
             seen.add(key)
-    parts = ["الجواب النموذجي"]
+    parts = ["الأجوبة النموذجية"]
     if subject:
         parts.append("لأسئلة مادة " + subject)
     parts.extend(value for value in (year, round_name, *details) if value)

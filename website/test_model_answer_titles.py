@@ -21,7 +21,7 @@ def context(*details):
 class AnswerTitleTests(unittest.TestCase):
     def test_requested_format_from_path_without_caption(self):
         self.assertEqual(format_answer_title(context("2025", "دور اول"), [], STAGE),
-                         "الجواب النموذجي لأسئلة مادة الكيمياء 2025 الدور الأول للصف السادس العلمي")
+                         "الأجوبة النموذجية لأسئلة مادة الكيمياء 2025 الدور الأول للصف السادس العلمي")
 
     def test_biological_and_applied_branches_are_not_inferred_from_grade(self):
         for raw, expected in [("احيائي", "أحيائي"), ("تطبيقي", "تطبيقي")]:
@@ -41,13 +41,13 @@ class AnswerTitleTests(unittest.TestCase):
 
     def test_missing_round_is_omitted_not_invented(self):
         title = format_answer_title(context("2026"), ["الاجوبة النموذجية"], STAGE)
-        self.assertEqual(title, "الجواب النموذجي لأسئلة مادة الكيمياء 2026 للصف السادس العلمي")
+        self.assertEqual(title, "الأجوبة النموذجية لأسئلة مادة الكيمياء 2026 للصف السادس العلمي")
         self.assertNotIn("غير محدد", title)
 
     def test_missing_year_is_omitted(self):
         self.assertEqual(
             format_answer_title(context("دور ثالث نازحين"), [], STAGE),
-            "الجواب النموذجي لأسئلة مادة الكيمياء الدور الثالث نازحين للصف السادس العلمي",
+            "الأجوبة النموذجية لأسئلة مادة الكيمياء الدور الثالث نازحين للصف السادس العلمي",
         )
 
     def test_path_facts_win_over_conflicting_caption(self):
@@ -104,7 +104,7 @@ class AnswerTitleIntegrationTests(unittest.TestCase):
             mocked.start()
             self.addCleanup(mocked.stop)
         self.client = web.create_app().test_client()
-        self.expected = "الجواب النموذجي لأسئلة مادة الكيمياء 2025 الدور الأول أحيائي للصف السادس العلمي"
+        self.expected = "الأجوبة النموذجية لأسئلة مادة الكيمياء 2025 الدور الأول أحيائي للصف السادس العلمي"
 
     def test_category_detail_metadata_search_and_latest_use_same_title(self):
         self.assertIn(self.expected, self.client.get("/cat/4").get_data(as_text=True))
