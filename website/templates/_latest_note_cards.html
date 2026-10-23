@@ -1,0 +1,36 @@
+{% for note in latest %}
+<a href="{{ note.url }}" class="note-card">
+  <div class="note-thumb">
+    {% if note.thumb_url and not note.is_attachment %}
+      <img src="/thumb/{{ note.id }}" alt="{{ note.display_label }}" loading="lazy">
+    {% else %}
+      <div class="note-thumb-placeholder">
+        <span>م</span>
+      </div>
+    {% endif %}
+  </div>
+  <div class="note-info">
+    <div class="note-top">
+      <h3 class="note-title">{{ note.display_label | strip_emoji }}</h3>
+      {% if note.is_new %}<span class="badge badge--new">جديد</span>{% endif %}
+    </div>
+    <div class="note-meta">
+      {% if note.subtitle %}
+      <span class="meta-item">{{ note.subtitle | strip_emoji }}</span>
+      {% endif %}
+      {% if not note.is_attachment and note.rating.count > 0 %}
+      <span class="meta-item">
+        <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}★{% else %}☆{% endif %}{% endfor %}</span>
+        <span class="meta-val">{{ note.rating.avg }}</span>
+      </span>
+      {% endif %}
+      {% if not note.is_attachment and note.click_count > 0 %}
+      <span class="meta-item">↓ <span class="meta-val">{{ note.click_count }}</span></span>
+      {% endif %}
+    </div>
+    <div class="note-actions">
+      <span class="open-btn">{% if note.is_attachment %}فتح الملزمة{% else %}عرض الملزمة{% endif %}</span>
+    </div>
+  </div>
+</a>
+{% endfor %}

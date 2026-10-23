@@ -146,6 +146,14 @@ _search_index_cache = {
     "visibility_revision": None,
 }
 _search_index_lock = Lock()
+_LATEST_NOTES_CACHE_TTL = 300
+_latest_notes_cache = {
+    "expires": 0.0,
+    "revision": None,
+    "source_stamp": None,
+    "items": None,
+}
+_latest_notes_lock = Lock()
 
 
 def _get_mongo():
@@ -1253,8 +1261,57 @@ def _search_content(q: str, limit: int = 50) -> list:
     return results
 
 
-def _latest_notes(limit: int = 8) -> list:
+def _latest_source_stamp():
+    """Fast _id high-water marks keep paged results fresh without rebuilding the full index."""
+    newest_ids = []
+    for collection_name in ("content_items", "buttons"):
+        newest = next(iter(_col(collection_name).find(
+            {}, {"_id": 1}
+        ).sort([("_id", -1)])), None)
+        newest_ids.append(str(newest.get("_id")) if newest else None)
+    return tuple(newest_ids)
+
+
+def _latest_notes(limit: int = 8, offset: int = 0) -> list:
     """يعرض كل مرفق كإضافة مستقلة، لا كحزمة واحدة مرتبطة بزر البوت."""
+    global _latest_notes_cache
+    limit = max(0, int(limit))
+    offset = max(0, int(offset))
+    revision = _website_visibility_revision()
+    source_stamp = _latest_source_stamp()
+    now = time.monotonic()
+
+    cached = _latest_notes_cache
+    if (cached["items"] is not None and now < cached["expires"]
+            and cached["revision"] == revision
+            and cached["source_stamp"] == source_stamp):
+        return [dict(item) for item in cached["items"][offset:offset + limit]]
+
+    with _latest_notes_lock:
+        revision = _website_visibility_revision()
+        source_stamp = _latest_source_stamp()
+        now = time.monotonic()
+        cached = _latest_notes_cache
+        if (cached["items"] is not None and now < cached["expires"]
+                and cached["revision"] == revision
+                and cached["source_stamp"] == source_stamp):
+            return [dict(item) for item in cached["items"][offset:offset + limit]]
+
+        # New uploads or visibility changes invalidate the list. Force a matching
+        # index refresh so a recent addition is not hidden by the short search TTL.
+        if cached["items"] is not None:
+            _search_index_cache["expires"] = 0.0
+        latest = _build_latest_notes()
+        _latest_notes_cache = {
+            "expires": time.monotonic() + _LATEST_NOTES_CACHE_TTL,
+            "revision": _website_visibility_revision(),
+            "source_stamp": _latest_source_stamp(),
+            "items": latest,
+        }
+        return [dict(item) for item in latest[offset:offset + limit]]
+
+
+def _build_latest_notes() -> list:
     candidates = []
     for record in _search_index_records():
         btn = record["button"]
@@ -1313,8 +1370,6 @@ def _latest_notes(limit: int = 8) -> list:
         seen.add(dedupe_key)
         candidate.pop("_sort", None)
         latest.append(candidate)
-        if len(latest) >= limit:
-            break
     return latest
 
 
@@ -1424,10 +1479,12 @@ def create_app() -> Flask:
     def index():
         # الصفحة الرئيسية: فقط القوائم التي تمثّل صفوفاً دراسية
         categories = _website_grades()
-        latest     = _latest_notes(8)
+        latest_page = _latest_notes(9)
+        latest = latest_page[:8]
         return render_template("index.html",
             categories=categories,
             latest=latest,
+            latest_has_more=len(latest_page) > 8,
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=SITE_NAME,
@@ -1443,6 +1500,24 @@ def create_app() -> Flask:
                 "url": SITE_URL + "/",
                 "inLanguage": "ar",
             },
+        )
+
+    @app.route("/api/latest-additions")
+    def api_latest_additions():
+        try:
+            offset = int(request.args.get("offset", "0"))
+        except (TypeError, ValueError):
+            return jsonify(error="invalid_offset"), 400
+        if offset < 0 or offset > 10000:
+            return jsonify(error="invalid_offset"), 400
+
+        page_size = 8
+        page = _latest_notes(page_size + 1, offset)
+        notes = page[:page_size]
+        return jsonify(
+            html=render_template("_latest_note_cards.html", latest=notes),
+            has_more=len(page) > page_size,
+            next_offset=offset + len(notes),
         )
 
     # ── صفحة فئة / قسم ───────────────────────────────────────────────

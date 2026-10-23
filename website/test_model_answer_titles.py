@@ -100,6 +100,9 @@ class AnswerTitleIntegrationTests(unittest.TestCase):
             patch.dict(os.environ, {"MONGODB_URI": "mongodb://unused.invalid/test"}),
             patch.object(web, "_col", side_effect=lambda name: self.db[name]),
             patch.object(web, "_search_index_cache", {"expires": 0, "records": None}),
+            patch.object(web, "_latest_notes_cache", {
+                "expires": 0, "revision": None, "source_stamp": None, "items": None,
+            }),
         ]:
             mocked.start()
             self.addCleanup(mocked.stop)

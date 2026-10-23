@@ -56,6 +56,11 @@ class IndependentNotesTests(unittest.TestCase):
         patches = [
             patch.dict(os.environ, {"MONGODB_URI": "mongodb://unused.invalid/botdb"}),
             patch.object(web, "_search_index_cache", {"expires": 0, "records": None}),
+            patch.object(web, "_latest_notes_cache", {
+                "expires": 0, "revision": None, "source_stamp": None, "items": None,
+            }),
+            patch.object(web, "_website_visibility_revision", return_value=None),
+            patch.object(web, "_latest_source_stamp", return_value=(None, None)),
             patch.object(web, "_btn", side_effect=lambda bid: {
                 10: self.group, 5: self.parent,
             }.get(bid)),

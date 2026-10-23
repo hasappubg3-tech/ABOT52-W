@@ -502,6 +502,43 @@ button { cursor: pointer; font-family: var(--font); border: none; background: no
   gap: .75rem;
 }
 
+.latest-additions-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .45rem;
+  margin: 1.25rem 0 .25rem;
+}
+.latest-load-more {
+  min-height: 46px;
+  padding: .65rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: .92rem;
+  font-weight: 700;
+  transition: border-color var(--transition), background var(--transition),
+    color var(--transition), transform .15s, opacity var(--transition);
+}
+.latest-load-more:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #111;
+}
+.latest-load-more:active:not(:disabled) { transform: scale(.98); }
+.latest-load-more:disabled { cursor: wait; opacity: .7; }
+.latest-load-more[hidden],
+.latest-load-sentinel[hidden] { display: none; }
+.latest-load-status {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: .85rem;
+  text-align: center;
+}
+.latest-load-sentinel { height: 1px; }
+
 .note-card {
   display: flex;
   align-items: flex-start;

@@ -199,23 +199,95 @@ function showToastGlobal(msg) {
 }
 
 // ── انتعاش الصور عند الخطأ ───────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('img').forEach(img => {
-    img.addEventListener('error', function () {
-      const parent = this.closest('.note-thumb, .gallery-item');
-      if (parent && !this.dataset.errHandled) {
-        this.dataset.errHandled = '1';
-        this.style.display = 'none';
-        // عرض placeholder نصي
-        const letter = (this.alt || 'م')[0];
-        const ph = document.createElement('div');
-        ph.className = 'note-thumb-placeholder';
-        ph.innerHTML = `<span>${letter}</span>`;
-        parent.appendChild(ph);
-      }
-    });
+function attachThumbnailFallback(img) {
+  if (img.dataset.errFallbackReady) return;
+  img.dataset.errFallbackReady = '1';
+  img.addEventListener('error', function () {
+    const parent = this.closest('.note-thumb, .gallery-item');
+    if (parent && !this.dataset.errHandled) {
+      this.dataset.errHandled = '1';
+      this.style.display = 'none';
+      const letter = (this.alt || 'م')[0];
+      const ph = document.createElement('div');
+      ph.className = 'note-thumb-placeholder';
+      ph.innerHTML = `<span>${letter}</span>`;
+      parent.appendChild(ph);
+    }
   });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('img').forEach(attachThumbnailFallback);
 });
+
+// ── التحميل التدريجي لآخر الإضافات ──────────────────────────────────
+(function () {
+  const list = document.getElementById('latest-additions-list');
+  const button = document.getElementById('latest-load-more');
+  const sentinel = document.getElementById('latest-load-sentinel');
+  const status = document.getElementById('latest-load-status');
+  if (!list || !button || !sentinel) return;
+
+  let nextOffset = Number.parseInt(list.dataset.nextOffset || '0', 10);
+  let loading = false;
+  let hasMore = true;
+  let observer = null;
+
+  async function loadMore() {
+    if (loading || !hasMore) return;
+    loading = true;
+    button.disabled = true;
+    button.textContent = 'جارٍ تحميل المزيد…';
+    status.textContent = 'جارٍ تحميل الإضافات…';
+    observer?.unobserve(sentinel);
+
+    try {
+      const response = await fetch(
+        `/api/latest-additions?offset=${encodeURIComponent(nextOffset)}`,
+        { headers: { Accept: 'application/json' }, credentials: 'same-origin' }
+      );
+      if (!response.ok) throw new Error('latest additions request failed');
+      const data = await response.json();
+      if (typeof data.html !== 'string' || !Number.isInteger(data.next_offset)) {
+        throw new Error('invalid latest additions response');
+      }
+
+      const template = document.createElement('template');
+      template.innerHTML = data.html;
+      template.content.querySelectorAll('img').forEach(attachThumbnailFallback);
+      list.appendChild(template.content);
+      nextOffset = data.next_offset;
+      list.dataset.nextOffset = String(nextOffset);
+      hasMore = Boolean(data.has_more);
+
+      if (!hasMore) {
+        button.hidden = true;
+        sentinel.hidden = true;
+        status.textContent = 'وصلت إلى نهاية قائمة الإضافات';
+        observer?.disconnect();
+        return;
+      }
+
+      button.textContent = 'عرض المزيد';
+      status.textContent = '';
+      observer?.observe(sentinel);
+    } catch (_error) {
+      button.textContent = 'تعذّر التحميل — حاول مرة أخرى';
+      status.textContent = 'لم نتمكن من تحميل الإضافات. اضغط لإعادة المحاولة.';
+    } finally {
+      loading = false;
+      button.disabled = false;
+    }
+  }
+
+  button.addEventListener('click', loadMore);
+  if ('IntersectionObserver' in window) {
+    observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) loadMore();
+    }, { rootMargin: '400px 0px' });
+    observer.observe(sentinel);
+  }
+})();
 
 // ── مساعد HTML escape ─────────────────────────────────────────────
 function escHtml(str) {
