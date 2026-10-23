@@ -89,6 +89,17 @@ class LatestPaginationTests(unittest.TestCase):
         self.assertEqual(first[0]["file_id"], "latest-17")
         self.assertEqual(second[0]["file_id"], "latest-09")
 
+    def test_new_upload_or_visibility_revision_refreshes_the_snapshot(self):
+        web._latest_notes(8)
+        refreshed = [{"id": 99, "display_label": "إضافة أحدث"}]
+        with (
+            patch.object(web, "_website_visibility_revision", return_value=1),
+            patch.object(web, "_latest_source_stamp", return_value=("new-item", "new-button")),
+            patch.object(web, "_build_latest_notes", return_value=refreshed) as rebuild,
+        ):
+            self.assertEqual(web._latest_notes(8), refreshed)
+        rebuild.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()

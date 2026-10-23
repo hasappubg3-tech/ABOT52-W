@@ -13,6 +13,7 @@
 - [School-stage menu layout](school-stage-menu-layout.md) — primary and middle school grades are grouped in their own sections; automatic uploads must not assume grades are root menus.
 - [Website grade navigation](website-grade-navigation.md) — flatten bot stage folders on the website; expose sixth-scientific model answers from the shared bot tree.
 - [Model-answer titles](website-model-answer-titles.md) — show subject, year, round and all available exam variants; omit missing facts, preserve existing links.
+- [Latest-additions loading](website-latest-additions.md) — homepage starts with a small batch, then auto-loads on scroll while retaining a manual “show more” button.
 - [Website visual preferences](website-style-preferences.md) — approved drawer gradient is the main site background; keep drawer partial-width on phones and transitions smooth.
 - [Study-material teacher emojis](material-parent-emoji.md) — teacher folders inherit their subject's custom emoji only inside the «ملازم» sections.
 - [Material demand ordering](material-demand-order.md) — only subject menus default to student-press ranking; «الملازم» menus retain their previous order.
