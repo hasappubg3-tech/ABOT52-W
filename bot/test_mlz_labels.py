@@ -114,6 +114,36 @@ class MaterialLabelTests(unittest.TestCase):
         self.assertEqual(live_collection.rows[9]["label_emojis"], old_style)
         self.assertEqual(snapshot.rows[3]["label_emojis"], new_style)
 
+    def test_teacher_material_buttons_hide_fallback_text_but_keep_custom_icon(self):
+        button = {
+            "id": 401, "type": "content", "label": "ملزمة 2026 🟠 🔥",
+            "parent_id": 300, "label_emojis": {"🔥": "emoji-10"}, "new_row": 1,
+        }
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(keyboards, "is_real_admin", return_value=False))
+            stack.enter_context(patch.object(keyboards, "is_admin", return_value=False))
+            stack.enter_context(patch.object(keyboards, "get_buttons_user", return_value=[button]))
+            stack.enter_context(patch.object(
+                keyboards, "get_btn", return_value={"id": 300, "type": "compound"},
+            ))
+            stack.enter_context(patch.object(keyboards, "menu_sort_by_demand", return_value=False))
+            stack.enter_context(patch.object(
+                keyboards, "_is_study_material_button", return_value=True,
+            ))
+            stack.enter_context(patch.object(keyboards, "_is_mlazm_subject", return_value=False))
+            stack.enter_context(patch.object(keyboards, "_btn_visible_for_user", return_value=True))
+            stack.enter_context(patch.object(keyboards, "_encode_bid", return_value=""))
+            stack.enter_context(patch.object(
+                keyboards, "_emoji_cache", {"🟠": "emoji-9", "🔥": "emoji-10"},
+            ))
+            stack.enter_context(patch.object(keyboards, "_emoji_cache_ts", time.time()))
+
+            markup = keyboards.build_kb(123, 300)
+
+        material_button = markup.keyboard[0][0]
+        self.assertEqual(material_button.text, "ملزمة 2026")
+        self.assertEqual(material_button.to_dict().get("icon_custom_emoji_id"), "emoji-10")
+
     def test_repair_only_changes_wrapped_material_content(self):
         buttons = [
             {"id": 1, "type": "menu", "label": "السادس العلمي", "parent_id": None},

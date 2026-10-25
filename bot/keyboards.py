@@ -1,7 +1,7 @@
 import re as _re
 import time as _ktime
 from .shared import *
-from .data_access import get_item
+from .data_access import get_item, _is_study_material_button
 
 WEBSITE_SEARCH_URL = (
     "https://alameer-iq.com/?open_search=1"
@@ -53,6 +53,8 @@ def _kb_emoji_style(label: str):
 
 def _strip_known_emojis(label: str) -> str:
     """يحذف رموز الإيموجي المحفوظة (الـ fallback) من نص الزر ويُنظّف المسافات الزائدة."""
+    if _ktime.time() - _emoji_cache_ts > _EMOJI_CACHE_TTL:
+        _refresh_emoji_cache()
     result = label
     for char in _emoji_cache:
         result = result.replace(char, "")
@@ -313,6 +315,10 @@ def build_kb(uid, pid=None):
     else:
         btns = get_buttons(pid)
     parent_b = get_btn(pid) if pid is not None else None
+    _is_mlz_teacher_material_list = bool(
+        parent_b and parent_b.get("type") == "compound"
+        and _is_study_material_button(pid)
+    )
     if menu_sort_by_demand(parent_b) and btns:
         btns = _sort_demand_children(btns)
     elif parent_b and parent_b.get("sort_alpha", 0) and btns:
@@ -387,6 +393,9 @@ def build_kb(uid, pid=None):
             # زر يحتوي إيموجي عادي فقط → لا أيقونة مخصصة
             _btn_kw = {}
             _display_label = label
+        if _is_mlz_teacher_material_list and b.get("type") == "content":
+            # Keep the custom icon, but never show its ordinary fallback glyph in the label.
+            _display_label = _strip_known_emojis(_display_label)
         if b["id"] == 14433:
             current_row.append(KeyboardButton(
                 _display_label,
