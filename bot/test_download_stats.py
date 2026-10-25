@@ -40,8 +40,9 @@ class DownloadStatsTests(unittest.TestCase):
             self.assertEqual(data_access.increment_item_download_count(41), 1)
             self.assertEqual(data_access.get_item_download_total(41), 2)
             clock[0] += 3600
-            self.assertEqual(data_access.increment_item_download_count(41), 3)
-            self.assertEqual(data_access.get_item_download_display_count(41), 3)
+            self.assertEqual(data_access.get_item_download_display_count(41), 2)
+            self.assertEqual(data_access.increment_item_download_count(41), 2)
+            self.assertEqual(data_access.get_item_download_display_count(41), 2)
 
     def test_only_material_section_ancestors_enable_counting(self):
         buttons = {

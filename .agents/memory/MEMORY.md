@@ -21,3 +21,4 @@
 - [Mini App keyboard focus](mini-app-keyboard-focus.md) — opening and focusing search does not guarantee that Telegram shows the phone keyboard.
 - [Telegram reply keyboard visibility](telegram-reply-keyboard-visibility.md) — keep controls non-persistent; unmatched student text restores the current menu without moving the student elsewhere.
 - [Sticky search motion](website-sticky-search-motion.md) — preserve document geometry across scroll-driven search visibility; layout swaps at animation boundaries caused repeated upward-scroll jank.
+- [Private stats and downloads](website-private-stats-downloads.md) — owner-only traffic stats; count successful bot file sends only for study materials, with hourly public snapshots.

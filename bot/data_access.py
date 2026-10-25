@@ -922,7 +922,6 @@ def _is_study_material_button(bid):
 def increment_item_download_count(iid):
     """Count one successfully delivered document; repeated sends count again."""
     iid = canonical_item_id(iid)
-    now = int(_time.time())
     stats = _col("item_download_stats")
     stats.update_one(
         {"item_id": iid},
@@ -932,22 +931,23 @@ def increment_item_download_count(iid):
         },
         upsert=True,
     )
-    current = stats.find_one({"item_id": iid}) or {}
-    last_display_update = int(current.get("display_updated_at") or 0)
-    if now - last_display_update >= 3600:
-        stats.update_one(
-            {"item_id": iid, "display_updated_at": current.get("display_updated_at")},
-            {"$set": {
-                "display_count": int(current.get("count") or 0),
-                "display_updated_at": now,
-            }},
-        )
     return get_item_download_display_count(iid)
 
 
 def get_item_download_display_count(iid):
     iid = canonical_item_id(iid)
-    row = _col("item_download_stats").find_one({"item_id": iid}) or {}
+    stats = _col("item_download_stats")
+    row = stats.find_one({"item_id": iid}) or {}
+    now = int(_time.time())
+    if row and now - int(row.get("display_updated_at") or 0) >= 3600:
+        stats.update_one(
+            {"item_id": iid, "display_updated_at": row.get("display_updated_at")},
+            {"$set": {
+                "display_count": int(row.get("count") or 0),
+                "display_updated_at": now,
+            }},
+        )
+        row = stats.find_one({"item_id": iid}) or {}
     return int(row.get("display_count") or 0)
 
 

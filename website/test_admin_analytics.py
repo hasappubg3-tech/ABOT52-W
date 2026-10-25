@@ -187,6 +187,7 @@ class OwnerStatsAuthTests(unittest.TestCase):
                 patch.object(web, "BOT_TOKEN", self.bot_token):
             self.assertFalse(web._verify_owner_webapp_init_data(stale))
             self.assertFalse(web._verify_owner_webapp_init_data(tampered))
+            self.assertFalse(web._verify_owner_webapp_init_data({"invalid": "type"}))
 
 
 if __name__ == "__main__":

@@ -182,13 +182,25 @@ def _bot_download_display_counts() -> dict:
         now = time.monotonic()
         if now < _DOWNLOAD_DISPLAY_CACHE["expires"]:
             return _DOWNLOAD_DISPLAY_CACHE["counts"]
-        counts = {
-            row["item_id"]: max(0, int(row.get("display_count") or 0))
-            for row in _col("item_download_stats").find(
-                {}, {"item_id": 1, "display_count": 1}
-            )
-            if row.get("item_id") is not None
-        }
+        stats = _col("item_download_stats")
+        counts = {}
+        timestamp = int(time.time())
+        for row in stats.find({}, {
+            "item_id": 1, "count": 1, "display_count": 1, "display_updated_at": 1,
+        }):
+            if row.get("item_id") is None:
+                continue
+            if timestamp - int(row.get("display_updated_at") or 0) >= 3600:
+                stats.update_one(
+                    {"item_id": row["item_id"],
+                     "display_updated_at": row.get("display_updated_at")},
+                    {"$set": {
+                        "display_count": int(row.get("count") or 0),
+                        "display_updated_at": timestamp,
+                    }},
+                )
+                row = stats.find_one({"item_id": row["item_id"]}) or row
+            counts[row["item_id"]] = max(0, int(row.get("display_count") or 0))
         for twin in _col("item_twins").find({}, {"a": 1, "b": 1}):
             left, right = twin.get("a"), twin.get("b")
             if left is None or right is None:
@@ -306,7 +318,8 @@ def _record_traffic_visit():
 
 def _verify_owner_webapp_init_data(init_data: str) -> bool:
     owner_id = os.environ.get("SUPER_ADMIN_ID", "").strip()
-    if not BOT_TOKEN or not owner_id.isdigit() or not init_data or len(init_data) > 4096:
+    if (not BOT_TOKEN or not owner_id.isdigit() or not isinstance(init_data, str)
+            or not init_data or len(init_data) > 4096):
         return False
     pairs = parse_qsl(init_data, keep_blank_values=True)
     if len({key for key, _ in pairs}) != len(pairs):
@@ -333,7 +346,7 @@ def _verify_owner_webapp_init_data(init_data: str) -> bool:
         user = json.loads(values.get("user", "{}"))
     except (TypeError, ValueError):
         return False
-    return str(user.get("id", "")) == owner_id
+    return isinstance(user, dict) and str(user.get("id", "")) == owner_id
 
 
 def _website_study_material_path(button: dict, buttons: dict) -> bool:
@@ -1643,6 +1656,8 @@ def create_app() -> Flask:
     @app.post("/api/admin/stats/auth")
     def admin_stats_auth():
         data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify(error="owner_authentication_required"), 403
         if not _verify_owner_webapp_init_data(data.get("initData", "")):
             session.pop("_stats_owner_authenticated_at", None)
             return jsonify(error="owner_authentication_required"), 403
