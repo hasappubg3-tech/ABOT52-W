@@ -121,6 +121,17 @@ async def send_animated(
         return False
 
     try:
+        original_text = text
+        saved_entities = []
+        template_key = None
+        from .emoji_customization import (
+            capture_external_message, emoji_occurrences, prepare_external_message,
+        )
+        text, saved_entities, reply_markup, template_key = prepare_external_message(
+            text, reply_markup=reply_markup,
+        )
+        has_saved_change = text != original_text or bool(saved_entities)
+
         if emoji_map is None:
             # سلوك قديم: استخدم القاموس العام
             from .data_access import get_all_emoji_aliases
@@ -139,7 +150,14 @@ async def send_animated(
                 for char, eid in emoji_map.items()
                 if char and char in text
             }
-        if not alias_map:
+        for span in emoji_occurrences(text, saved_entities):
+            if span.get("custom_emoji_id"):
+                alias_map[span["glyph"]] = {
+                    "emoji_id": span["custom_emoji_id"],
+                    "alias": span["glyph"],
+                    "fallback": span["glyph"],
+                }
+        if not alias_map and not has_saved_change:
             return False   # لا إيموجي متحرك → PTB يكفي
 
         client = await _get_client()
@@ -153,7 +171,7 @@ async def send_animated(
         if reply_markup is not None:
             pyro_markup = _ptb_kb_to_pyro(reply_markup)
 
-        await client.send_message(
+        sent = await client.send_message(
             chat_id                  = chat_id,
             text                     = text,
             entities                 = entities or None,
@@ -161,6 +179,20 @@ async def send_animated(
             disable_web_page_preview = disable_web_preview,
             parse_mode               = None,   # نستخدم entities يدوياً
         )
+        if sent:
+            chat = getattr(sent, "chat", None)
+            sent_chat_id = getattr(chat, "id", chat_id)
+            kind = getattr(chat, "type", "private")
+            kind = getattr(kind, "value", kind)
+            capture_external_message(
+                sent_chat_id,
+                getattr(sent, "id", getattr(sent, "message_id", None)),
+                getattr(sent, "text", text),
+                getattr(sent, "entities", None),
+                getattr(sent, "reply_markup", pyro_markup),
+                template_key=template_key,
+                chat_type=str(kind).lower(),
+            )
         return True
 
     except Exception as e:

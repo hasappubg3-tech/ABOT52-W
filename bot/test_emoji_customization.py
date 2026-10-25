@@ -142,6 +142,49 @@ class EmojiCustomizationTests(unittest.TestCase):
             self.assertTrue(query.answers[-1][1])
         asyncio.run(run_check())
 
+    def test_saved_emoji_is_applied_to_pyrogram_preview_messages(self):
+        async def run_send():
+            from bot import pyro_sender
+
+            original = "📚 عدد الملفات: 12"
+            key = custom._template_key(original)
+            saved = {
+                key: {
+                    "occurrences": {
+                        "0": {"0": {"glyph": "🔥", "custom_emoji_id": "saved-emoji-42"}}
+                    },
+                    "buttons": {},
+                }
+            }
+
+            class FakePyrogramClient:
+                def __init__(self):
+                    self.sent = None
+
+                async def send_message(self, **kwargs):
+                    self.sent = kwargs
+                    return SimpleNamespace(
+                        chat=SimpleNamespace(id=123, type=SimpleNamespace(value="private")),
+                        id=77, text=kwargs["text"], entities=kwargs["entities"],
+                    )
+
+            client = FakePyrogramClient()
+            custom._OWNER_LAST_MESSAGE = None
+            with patch.dict(os.environ, {"SUPER_ADMIN_ID": "123"}), \
+                    patch.object(custom, "_load_overrides", return_value=saved), \
+                    patch.object(pyro_sender, "_get_client", return_value=client):
+                sent = await pyro_sender.send_animated(123, original, emoji_map={})
+            self.assertTrue(sent)
+            self.assertEqual(client.sent["text"], "🔥 عدد الملفات: 12")
+            self.assertEqual(
+                [entity.custom_emoji_id for entity in client.sent["entities"]],
+                ["saved-emoji-42"],
+            )
+            self.assertEqual(custom._OWNER_LAST_MESSAGE["message_id"], 77)
+            custom._OWNER_LAST_MESSAGE = None
+
+        asyncio.run(run_send())
+
     def test_emoji_parser_keeps_zwj_flags_and_utf16_offsets(self):
         text = "👩‍👩‍👧‍👦 🇮🇶 ⭐"
         found = custom.emoji_occurrences(text)

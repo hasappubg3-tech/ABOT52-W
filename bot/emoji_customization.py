@@ -303,6 +303,33 @@ def _apply_saved_overrides(message):
     return text, entities, markup
 
 
+def prepare_external_message(text, entities=None, reply_markup=None):
+    """Render saved text substitutions for senders that do not use ExtBot."""
+    message = type("OutgoingText", (), {})()
+    message.text = text
+    message.entities = list(entities or ())
+    message.reply_markup = reply_markup
+    key = _template_key(text, entities)
+    try:
+        new_text, new_entities, new_markup = _apply_saved_overrides(message)
+        return new_text, new_entities, new_markup, key
+    except Exception:
+        logging.warning("Saved emoji override could not be applied to an external message.")
+        return text, list(entities or ()), reply_markup, key
+
+
+def capture_external_message(chat_id, message_id, text, entities=None, reply_markup=None,
+                             template_key=None, chat_type="private"):
+    message = type("ExternalBotMessage", (), {})()
+    message.chat = type("Chat", (), {"id": chat_id, "type": chat_type})()
+    message.chat_id = chat_id
+    message.message_id = message_id
+    message.text = text
+    message.entities = list(entities or ())
+    message.reply_markup = reply_markup
+    _capture_owner_message(message, template_key=template_key)
+
+
 def _message_is_customization_ui(text):
     return bool(text and (
         str(text).startswith(_UI_PREFIX)
