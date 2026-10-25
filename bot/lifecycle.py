@@ -90,6 +90,16 @@ async def post_init(app):
             )
     except Exception:
         logging.exception("تعذر تحويل إيموجي أزرار الملازم من #9 إلى #10.")
+    try:
+        from .data_access import migrate_remove_diamond_from_emoji10_buttons
+        removed = migrate_remove_diamond_from_emoji10_buttons()
+        if removed:
+            logging.info(
+                "تم حذف 🔶 من %s من الأزرار المرتبطة بالإيموجي المخصص #10.",
+                removed,
+            )
+    except Exception:
+        logging.exception("تعذر حذف 🔶 من الأزرار المرتبطة بالإيموجي المخصص #10.")
     _setup_pomodoro_feature()
     logging.info("تم إعداد ميزة البومودورو.")
     _setup_grade_calc_feature()

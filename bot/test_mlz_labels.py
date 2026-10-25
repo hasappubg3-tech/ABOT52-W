@@ -114,6 +114,37 @@ class MaterialLabelTests(unittest.TestCase):
         self.assertEqual(live_collection.rows[9]["label_emojis"], old_style)
         self.assertEqual(snapshot.rows[3]["label_emojis"], new_style)
 
+    def test_remove_diamond_from_all_labels_using_custom_emoji_10(self):
+        emoji10_style = {"🔥": "emoji-10"}
+        live_collection = MemoryButtonCollection([
+            {"id": 1, "type": "content", "label": "ملزمة 2026 🔶 🔥",
+             "label_emojis": emoji10_style},
+            {"id": 2, "type": "menu", "label": "قسم 🔶", "label_emojis": {"⭐": "emoji-9"}},
+            {"id": 3, "type": "content", "label": "ملخص 2025 🔥",
+             "label_emojis": emoji10_style},
+        ])
+        snapshot = MemoryButtonCollection(live_collection.rows)
+        collections = {"buttons": live_collection, "buttons_snapshot": snapshot}
+        settings = {}
+
+        with patch.object(data, "_col", side_effect=lambda name: collections[name]), \
+                patch.object(data, "get_setting",
+                             side_effect=lambda key, default=None: settings.get(key, default)), \
+                patch.object(data, "set_setting",
+                             side_effect=lambda key, value: settings.__setitem__(key, value)), \
+                patch.object(data, "get_emoji_alias",
+                             return_value={"emoji_id": "emoji-10"}):
+            removed = data.migrate_remove_diamond_from_emoji10_buttons()
+            rerun = data.migrate_remove_diamond_from_emoji10_buttons()
+
+        self.assertEqual(removed, 2)
+        self.assertEqual(rerun, 0)
+        self.assertEqual(live_collection.rows[0]["label"], "ملزمة 2026 🔥")
+        self.assertEqual(live_collection.rows[1]["label"], "قسم 🔶")
+        self.assertEqual(live_collection.rows[2]["label"], "ملخص 2025 🔥")
+        self.assertEqual(snapshot.rows[0]["label"], "ملزمة 2026 🔥")
+        self.assertEqual(settings["remove_diamond_from_emoji10_button_labels_v1"], "1")
+
     def test_teacher_material_buttons_hide_fallback_text_but_keep_custom_icon(self):
         button = {
             "id": 401, "type": "content", "label": "ملزمة 2026 🟠 🔥",

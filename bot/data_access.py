@@ -1703,6 +1703,41 @@ def migrate_mlz_button_emoji_alias(old_alias="9", new_alias="10"):
     return updated
 
 
+def migrate_remove_diamond_from_emoji10_buttons():
+    """Remove the ordinary 🔶 glyph from labels that use custom emoji alias #10."""
+    migration_key = "remove_diamond_from_emoji10_button_labels_v1"
+    if get_setting(migration_key, "0") == "1":
+        return 0
+
+    alias = get_emoji_alias("10")
+    emoji_id = str((alias or {}).get("emoji_id") or "")
+    if not emoji_id:
+        raise ValueError("Custom emoji alias #10 is missing or has no emoji ID.")
+
+    updated = 0
+    for collection_name in ("buttons", "buttons_snapshot"):
+        collection = _col(collection_name)
+        for button in collection.find({}):
+            styles = button.get("label_emojis")
+            if not isinstance(styles, dict) or not any(
+                str(saved_id) == emoji_id for saved_id in styles.values()
+            ):
+                continue
+
+            label = str(button.get("label") or "")
+            if "🔶" not in label:
+                continue
+            cleaned_label = _re.sub(r"\s+", " ", label.replace("🔶", "")).strip()
+            collection.update_one(
+                {"id": button["id"]},
+                {"$set": {"label": cleaned_label}},
+            )
+            updated += 1
+
+    set_setting(migration_key, "1")
+    return updated
+
+
 def get_all_emoji_aliases() -> list:
     return [_d(d) for d in _col("emoji_aliases").find().sort("alias", 1)]
 
