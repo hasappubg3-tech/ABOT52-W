@@ -60,6 +60,17 @@ def _strip_known_emojis(label: str) -> str:
         result = result.replace(char, "")
     return result.strip()
 
+def _strip_material_label_emojis(label: str) -> str:
+    """Hide ordinary emoji glyphs from material titles; the custom button icon is separate."""
+    label = _re.sub(
+        r"[\U0001F000-\U0001FAFF\U00002700-\U000027BF"
+        r"\U00002600-\U000026FF\U00002300-\U000023FF"
+        r"\U00002B00-\U00002BFF\uFE0E\uFE0F\u200D\u20E3]+",
+        "",
+        label,
+    )
+    return _re.sub(r"\s+", " ", label).strip()
+
 def keyboard_display_label(label, label_emojis=None):
     """Use the same visible text for keyboard rendering and press resolution."""
     if label_emojis is None:
@@ -394,8 +405,8 @@ def build_kb(uid, pid=None):
             _btn_kw = {}
             _display_label = label
         if _is_mlz_teacher_material_list and b.get("type") == "content":
-            # Keep the custom icon, but never show its ordinary fallback glyph in the label.
-            _display_label = _strip_known_emojis(_display_label)
+            # The custom icon is rendered separately; remove any ordinary glyph left in the title.
+            _display_label = _strip_material_label_emojis(_display_label)
         if b["id"] == 14433:
             current_row.append(KeyboardButton(
                 _display_label,

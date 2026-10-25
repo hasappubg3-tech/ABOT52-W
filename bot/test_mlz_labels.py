@@ -133,8 +133,10 @@ class MaterialLabelTests(unittest.TestCase):
             stack.enter_context(patch.object(keyboards, "_is_mlazm_subject", return_value=False))
             stack.enter_context(patch.object(keyboards, "_btn_visible_for_user", return_value=True))
             stack.enter_context(patch.object(keyboards, "_encode_bid", return_value=""))
+            # The orange glyph is not registered as an alias, so alias-only cleanup
+            # would leave it beside the custom icon.
             stack.enter_context(patch.object(
-                keyboards, "_emoji_cache", {"🟠": "emoji-9", "🔥": "emoji-10"},
+                keyboards, "_emoji_cache", {"🔥": "emoji-10"},
             ))
             stack.enter_context(patch.object(keyboards, "_emoji_cache_ts", time.time()))
 
