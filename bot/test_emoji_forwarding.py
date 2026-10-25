@@ -232,22 +232,26 @@ class EmojiForwardingTests(unittest.TestCase):
                 f"emoji_custom_select:{data['bot_emoji_customization']['nonce']}:{button_index}"
             )
             context = SimpleNamespace(bot=bot, user_data=data)
-            await custom.handle_owner_emoji_callback(SimpleNamespace(
-                callback_query=FakeQuery(bot, select_data, owner, picker),
-            ), context)
-            await custom.handle_owner_emoji_input(
-                SimpleNamespace(text="🔥", entities=[]), bot, owner, owner, "private", data,
-            )
-            preview = bot.messages[(owner, bot.next_id - 1)]
-            self.assertEqual(
-                preview.reply_markup.inline_keyboard[0][0].text, "🔥 التعليقات",
-            )
-            await custom.handle_owner_emoji_callback(SimpleNamespace(
-                callback_query=FakeQuery(
-                    bot, preview.reply_markup.inline_keyboard[-1][0].callback_data,
-                    owner, preview,
-                ),
-            ), context)
+            with patch.dict(os.environ, {"SUPER_ADMIN_ID": str(owner)}), \
+                    patch.object(custom, "_collection", return_value=overrides), \
+                    patch.object(custom, "_OVERRIDE_CACHE", {"expires": 0.0, "values": {}}), \
+                    patch.object(custom, "_load_overrides", return_value={}):
+                await custom.handle_owner_emoji_callback(SimpleNamespace(
+                    callback_query=FakeQuery(bot, select_data, owner, picker),
+                ), context)
+                await custom.handle_owner_emoji_input(
+                    SimpleNamespace(text="🔥", entities=[]), bot, owner, owner, "private", data,
+                )
+                preview = bot.messages[(owner, bot.next_id - 1)]
+                self.assertEqual(
+                    preview.reply_markup.inline_keyboard[0][0].text, "🔥 التعليقات",
+                )
+                await custom.handle_owner_emoji_callback(SimpleNamespace(
+                    callback_query=FakeQuery(
+                        bot, preview.reply_markup.inline_keyboard[-1][0].callback_data,
+                        owner, preview,
+                    ),
+                ), context)
             changed_button = original.reply_markup.inline_keyboard[0][0]
             self.assertEqual(changed_button.text, "🔥 التعليقات")
             self.assertEqual(changed_button.callback_data, "cmts_item:45")
