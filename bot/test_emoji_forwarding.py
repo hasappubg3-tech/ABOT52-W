@@ -181,6 +181,101 @@ class EmojiForwardingTests(unittest.TestCase):
             self.assertTrue(data["bot_emoji_customization"]["target"]["is_caption"])
         asyncio.run(run_check())
 
+    def test_forward_recovers_the_original_button_emojis_for_selection(self):
+        async def run_check():
+            owner = 733
+            bot = FakeBot()
+            bot.id = 888
+            original_text = "⭐ تقييم الملف: 0\n👥 عدد التقييمات: 0"
+            markup = custom.InlineKeyboardMarkup([[
+                custom.InlineKeyboardButton("💬 التعليقات", callback_data="cmts_item:45"),
+            ]])
+            custom._OWNER_LAST_MESSAGE = None
+            custom._OWNER_RECENT_MESSAGES = []
+            data = {}
+            overrides = MemoryOverrides()
+            with patch.dict(os.environ, {"SUPER_ADMIN_ID": str(owner)}), \
+                    patch.object(custom, "_collection", return_value=overrides), \
+                    patch.object(custom, "_OVERRIDE_CACHE", {"expires": 0.0, "values": {}}), \
+                    patch.object(custom, "_load_overrides", return_value={}):
+                original = await bot.send_message(
+                    chat_id=owner, text=original_text, reply_markup=markup,
+                )
+                result = await handle_forwarded_emoji_message(
+                    forwarded_message(owner=owner, text=original_text),
+                    bot, owner, owner, "private", data,
+                )
+
+            self.assertTrue(result)
+            target = data["bot_emoji_customization"]["target"]
+            self.assertEqual(target["message_id"], original.message_id)
+            self.assertTrue(target["editable"])
+            self.assertEqual(target["reply_markup"], markup)
+            self.assertTrue(target["original_markup_found"])
+            occurrences = data["bot_emoji_customization"]["occurrences"]
+            self.assertTrue(any(
+                item.get("scope") == "button" and item["glyph"] == "💬"
+                for item in occurrences
+            ))
+            picker = bot.messages[(owner, bot.next_id - 1)]
+            self.assertIn("الإيموجيات الموجودة في أزرار الرسالة الأصلية", picker.text)
+            self.assertTrue(any(
+                "زر: 💬 التعليقات" in button.text
+                for row in picker.reply_markup.inline_keyboard for button in row
+            ))
+
+            button_index = next(
+                index for index, item in enumerate(occurrences)
+                if item.get("scope") == "button"
+            )
+            select_data = (
+                f"emoji_custom_select:{data['bot_emoji_customization']['nonce']}:{button_index}"
+            )
+            context = SimpleNamespace(bot=bot, user_data=data)
+            await custom.handle_owner_emoji_callback(SimpleNamespace(
+                callback_query=FakeQuery(bot, select_data, owner, picker),
+            ), context)
+            await custom.handle_owner_emoji_input(
+                SimpleNamespace(text="🔥", entities=[]), bot, owner, owner, "private", data,
+            )
+            preview = bot.messages[(owner, bot.next_id - 1)]
+            self.assertEqual(
+                preview.reply_markup.inline_keyboard[0][0].text, "🔥 التعليقات",
+            )
+            await custom.handle_owner_emoji_callback(SimpleNamespace(
+                callback_query=FakeQuery(
+                    bot, preview.reply_markup.inline_keyboard[-1][0].callback_data,
+                    owner, preview,
+                ),
+            ), context)
+            changed_button = original.reply_markup.inline_keyboard[0][0]
+            self.assertEqual(changed_button.text, "🔥 التعليقات")
+            self.assertEqual(changed_button.callback_data, "cmts_item:45")
+            custom._OWNER_LAST_MESSAGE = None
+            custom._OWNER_RECENT_MESSAGES = []
+        asyncio.run(run_check())
+
+    def test_forward_without_a_recent_original_explains_telegram_drops_buttons(self):
+        async def run_check():
+            owner = 734
+            bot = FakeBot()
+            bot.id = 888
+            custom._OWNER_RECENT_MESSAGES = []
+            data = {}
+            with patch.dict(os.environ, {"SUPER_ADMIN_ID": str(owner)}):
+                result = await handle_forwarded_emoji_message(
+                    forwarded_message(owner=owner),
+                    bot, owner, owner, "private", data,
+                )
+            self.assertTrue(result)
+            target = data["bot_emoji_customization"]["target"]
+            self.assertFalse(target["editable"])
+            picker = bot.messages[(owner, bot.next_id - 1)]
+            self.assertIn("Telegram لا يرفق الأزرار", picker.text)
+            custom._OWNER_LAST_MESSAGE = None
+            custom._OWNER_RECENT_MESSAGES = []
+        asyncio.run(run_check())
+
     def test_real_bot_caption_send_hook_applies_saved_changes(self):
         async def run_check():
             caption = "📚 وصف الملزمة"

@@ -14,9 +14,12 @@ from bot.emoji_buttons import button_occurrences, preview_keyboard, replace_butt
 from .shared import get_mongo_db
 
 _OWNER_LAST_MESSAGE = None
+_OWNER_RECENT_MESSAGES = []
 _OVERRIDE_CACHE = {"expires": 0.0, "values": {}}
 _OVERRIDE_TTL = 30
 _FLOW_TTL = 600
+_FORWARD_MATCH_TTL = 24 * 60 * 60
+_OWNER_MESSAGE_HISTORY_LIMIT = 200
 _STATE_KEY = "bot_emoji_customization"
 _CUSTOM_EMOJI = getattr(MessageEntity, "CUSTOM_EMOJI", "custom_emoji")
 _UI_PREFIX = "🛠 تخصيص الإيموجي:"
@@ -351,7 +354,7 @@ def _is_customization_message(message):
 
 
 def _capture_owner_message(message, template_key=None):
-    global _OWNER_LAST_MESSAGE
+    global _OWNER_LAST_MESSAGE, _OWNER_RECENT_MESSAGES
     text = getattr(message, "text", None) or getattr(message, "caption", None)
     if not message or not text or not getattr(message, "chat", None):
         return
@@ -363,7 +366,7 @@ def _capture_owner_message(message, template_key=None):
             or getattr(chat, "type", None) != "private"
             or _message_is_customization_ui(text)):
         return
-    _OWNER_LAST_MESSAGE = {
+    captured = {
         "chat_id": chat.id,
         "message_id": message.message_id,
         "text": text, "entities": entities, "is_caption": is_caption,
@@ -371,6 +374,27 @@ def _capture_owner_message(message, template_key=None):
         "template_key": template_key or _template_key(text, entities),
         "created_at": time.monotonic(),
     }
+    _OWNER_LAST_MESSAGE = captured
+    cutoff = captured["created_at"] - _FORWARD_MATCH_TTL
+    _OWNER_RECENT_MESSAGES = [
+        item for item in _OWNER_RECENT_MESSAGES
+        if item["created_at"] >= cutoff
+        and str(item["chat_id"]) == str(owner_id)
+    ]
+    _OWNER_RECENT_MESSAGES.append(captured)
+    if len(_OWNER_RECENT_MESSAGES) > _OWNER_MESSAGE_HISTORY_LIMIT:
+        del _OWNER_RECENT_MESSAGES[:-_OWNER_MESSAGE_HISTORY_LIMIT]
+
+
+def find_recent_owner_message(text, owner_id):
+    """Recover the original keyboard from a recent bot message that was forwarded."""
+    now = time.monotonic()
+    for target in reversed(_OWNER_RECENT_MESSAGES):
+        if (str(target["chat_id"]) == str(owner_id)
+                and target["text"] == text
+                and now - target["created_at"] <= _FORWARD_MATCH_TTL):
+            return dict(target)
+    return None
 
 
 def _owner_target(message, owner_id):
@@ -444,12 +468,22 @@ async def begin_emoji_customization(bot, uid, chat_id, chat_type, user_data, rep
         "nonce": nonce, "phase": "select", "target": target,
         "occurrences": occurrences, "created_at": time.monotonic(),
     }
+    if target.get("forwarded") and target.get("original_markup_found"):
+        note = "\nأظهرت لك الإيموجيات الموجودة في أزرار الرسالة الأصلية."
+    elif target.get("forwarded") and target.get("original_message_found"):
+        note = "\nالرسالة الأصلية التي عثرت عليها لا تحتوي لوحة أزرار."
+    elif target.get("forwarded"):
+        note = (
+            "\nلم أعثر على نسخة الرسالة الأصلية ضمن الرسائل الأخيرة. Telegram لا يرفق الأزرار "
+            "عند التوجيه؛ أعد إرسال الرسالة من البوت ثم وجّهها إليه."
+        )
+    elif not target.get("editable", True):
+        note = "\nالتغييرات تُحفظ للرسائل القادمة. لا يمكن تعديل نسخة الرسالة المُوجّهة نفسها."
+    else:
+        note = ""
     await bot.send_message(
         chat_id=chat_id,
-        text=_UI_PREFIXES[0] + (
-            "\nالتغييرات تُحفظ للرسائل القادمة. التوجيه لا ينقل أزرار الرسالة الأصلية."
-            if not target.get("editable", True) else ""
-        ),
+        text=_UI_PREFIXES[0] + note,
         reply_markup=_selection_keyboard(user_data[_STATE_KEY], 0),
     )
     return True
