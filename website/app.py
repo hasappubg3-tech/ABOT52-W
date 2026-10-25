@@ -160,6 +160,8 @@ _latest_notes_cache = {
 _latest_notes_lock = Lock()
 _DOWNLOAD_DISPLAY_CACHE = {"expires": 0.0, "counts": {}}
 _DOWNLOAD_DISPLAY_LOCK = Lock()
+_CARD_RATINGS_CACHE = {"expires": 0.0, "source": None, "ratings": {}, "twins": {}}
+_CARD_RATINGS_LOCK = Lock()
 _TRAFFIC_INDEX_LOCK = Lock()
 _traffic_indexes_ready = False
 
@@ -233,6 +235,45 @@ def _attachment_download_count_from_record(record: dict, item_id: int) -> int | 
     if not record.get("download_tracking"):
         return None
     return _bot_download_display_counts().get(item_id, 0)
+
+
+def _attachment_card_rating(button: dict, item: dict) -> dict:
+    """Load real shared/item feedback in batches, not one query per file card."""
+    now = time.monotonic()
+    with _CARD_RATINGS_LOCK:
+        cache = _CARD_RATINGS_CACHE
+        if cache["source"] is not _col or now >= cache["expires"]:
+            ratings, twins = {}, {}
+            for kind, collection, field in (
+                ("item", "item_ratings", "item_id"),
+                ("btn", "button_ratings", "button_id"),
+            ):
+                totals = {}
+                for row in _col(collection).find({}, {field: 1, "rating": 1}):
+                    value = row.get("rating")
+                    if (row.get(field) is None or not isinstance(value, (int, float))
+                            or not 1 <= value <= 5):
+                        continue
+                    count, total = totals.get(row[field], (0, 0))
+                    totals[row[field]] = (count + 1, total + value)
+                for target_id, (count, total) in totals.items():
+                    ratings[(kind, target_id)] = {
+                        "count": count, "avg": round(total / count, 1),
+                    }
+                for pair in _col("item_twins" if kind == "item" else "btn_twins").find(
+                    {}, {"a": 1, "b": 1}
+                ):
+                    if pair.get("a") is not None and pair.get("b") is not None:
+                        canonical = min(pair["a"], pair["b"])
+                        twins[(kind, pair["a"])] = canonical
+                        twins[(kind, pair["b"])] = canonical
+            cache.update(
+                source=_col, expires=time.monotonic() + 60,
+                ratings=ratings, twins=twins,
+            )
+        kind, target_id = feedback_store.target(button, item)
+        target_id = cache["twins"].get((kind, target_id), target_id)
+        return dict(cache["ratings"].get((kind, target_id), {"count": 0, "avg": 0.0}))
 
 
 def _safe_traffic_tag(value, allowed: set[str]) -> str:
@@ -979,6 +1020,7 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
             "click_count": 0,
             "is_attachment": True,
             "download_count": _attachment_download_count(btn["id"], item["id"]),
+            "rating": _attachment_card_rating(btn, item),
         })
     return cards
 
@@ -1143,6 +1185,7 @@ def _similar_attachments(selected: dict, limit: int = 6) -> list:
                 "download_count": _attachment_download_count_from_record(
                     record, item["id"]
                 ),
+                "rating": _attachment_card_rating(button, item),
                 "_score": (same_button, same_teacher, same_parent, shared_topics),
                 "_sort": _item_sort_key(item),
             })
@@ -1430,6 +1473,7 @@ def _record_search_documents(record: dict, attachment_paths: dict | None = None)
                     "download_count": _attachment_download_count_from_record(
                         record, item["id"]
                     ),
+                    "rating": _attachment_card_rating(btn, item),
                 },
             })
     else:
@@ -1442,7 +1486,7 @@ def _record_search_documents(record: dict, attachment_paths: dict | None = None)
             "year": max((int(y) for y in _year_candidates(text)), default=0),
             "result": {
                 **btn,
-                "rating": {"count": 0, "avg": 0.0, "stars": ""},
+                "rating": _rating(btn["id"]),
                 "is_new": _is_new(btn),
                 "thumb_url": False,
                 "click_count": btn.get("click_count", 0),
@@ -1555,6 +1599,7 @@ def _build_latest_notes() -> list:
                     "download_count": _attachment_download_count_from_record(
                         record, item["id"]
                     ),
+                    "rating": _attachment_card_rating(btn, item),
                     "_dedupe_key": ("file", item["file_id"]),
                     "_sort": _item_sort_key(item),
                 })

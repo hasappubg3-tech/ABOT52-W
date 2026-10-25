@@ -151,8 +151,8 @@
         const subtitle = item.subtitle
           ? `<span class="search-result-subtitle">${escHtml(item.subtitle)}</span>`
           : '';
-        const downloads = item.download_count !== null && item.download_count !== undefined
-          ? `<span class="search-result-subtitle">📥 ${escHtml(item.download_count)} تحميل</span>`
+        const downloads = Number(item.download_count) > 0
+          ? `<span class="search-result-subtitle" aria-label="عدد التحميلات">↓ ${escHtml(item.download_count)}</span>`
           : '';
         return `<a class="search-result-item" href="${escHtml(item.url)}"><span>${escHtml(item.label)}</span>${subtitle}${downloads}</a>`;
       }).join('') +

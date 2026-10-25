@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_card_metrics.html" import card_metrics %}
 
 {% block breadcrumb %}
 <nav class="breadcrumb" aria-label="مسار التنقل">
@@ -31,8 +32,8 @@
       {% if subtitle %}
       <p class="attachment-page-meta">{{ subtitle | strip_emoji }}</p>
       {% endif %}
-      {% if download_count is not none %}
-      <p class="attachment-page-meta">📥 {{ download_count }} تحميل من البوت</p>
+      {% if (download_count or 0) > 0 %}
+      <p class="attachment-page-meta" aria-label="عدد التحميلات: {{ download_count }}">↓ {{ download_count }}</p>
       {% endif %}
       <div class="detail-actions">
         <a href="{{ bot_deep_link }}" target="_blank" rel="noopener noreferrer"
@@ -62,18 +63,12 @@
             <h3 class="note-title">{{ file.display_label | strip_emoji }}</h3>
             {% if file.is_new %}<span class="badge badge--new">جديد</span>{% endif %}
           </div>
-          {% if file.subtitle %}
           <div class="note-meta">
+            {% if file.subtitle %}
             <span class="meta-item">{{ file.subtitle | strip_emoji }}</span>
-            {% if file.download_count is not none %}
-            <span class="meta-item">📥 <span class="meta-val">{{ file.download_count }}</span> تحميل</span>
             {% endif %}
+            {{ card_metrics(file) }}
           </div>
-          {% elif file.download_count is not none %}
-          <div class="note-meta">
-            <span class="meta-item">📥 <span class="meta-val">{{ file.download_count }}</span> تحميل</span>
-          </div>
-          {% endif %}
           <div class="note-actions">
             <span class="open-btn">فتح الملف</span>
           </div>

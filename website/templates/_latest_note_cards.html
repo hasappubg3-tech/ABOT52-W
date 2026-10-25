@@ -1,3 +1,4 @@
+{% from "_card_metrics.html" import card_metrics %}
 {% for note in latest %}
 <a href="{{ note.url }}" class="note-card">
   <div class="note-thumb">
@@ -18,18 +19,7 @@
       {% if note.subtitle %}
       <span class="meta-item">{{ note.subtitle | strip_emoji }}</span>
       {% endif %}
-      {% if note.is_attachment and note.download_count is not none %}
-      <span class="meta-item">📥 <span class="meta-val">{{ note.download_count }}</span> تحميل</span>
-      {% endif %}
-      {% if not note.is_attachment and note.rating.count > 0 %}
-      <span class="meta-item">
-        <span class="meta-stars">{% for i in range(5) %}{% if i < note.rating.avg|int %}★{% else %}☆{% endif %}{% endfor %}</span>
-        <span class="meta-val">{{ note.rating.avg }}</span>
-      </span>
-      {% endif %}
-      {% if not note.is_attachment and note.click_count > 0 %}
-      <span class="meta-item">↓ <span class="meta-val">{{ note.click_count }}</span></span>
-      {% endif %}
+      {{ card_metrics(note) }}
     </div>
     <div class="note-actions">
       <span class="open-btn">{% if note.is_attachment %}فتح الملزمة{% else %}عرض الملزمة{% endif %}</span>

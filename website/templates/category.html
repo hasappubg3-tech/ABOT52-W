@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_card_metrics.html" import card_metrics %}
 
 {% block breadcrumb %}
 {% if breadcrumb|length > 1 %}
@@ -76,29 +77,8 @@
           <span class="meta-item">
             <span class="meta-val">{{ note.subtitle | strip_emoji }}</span>
           </span>
-          {% if note.download_count is not none %}
-          <span class="meta-item">📥 <span class="meta-val">{{ note.download_count }}</span> تحميل</span>
           {% endif %}
-          {% else %}
-          {% if note.rating.count > 0 %}
-          <span class="meta-item">
-            <span class="meta-stars">
-              {% for i in range(5) %}
-                {% if i < note.rating.avg|int %}★{% else %}☆{% endif %}
-              {% endfor %}
-            </span>
-            <span class="meta-val">{{ note.rating.avg }}</span>
-            <span class="meta-dim">({{ note.rating.count }})</span>
-          </span>
-          {% endif %}
-
-          {% if note.click_count > 0 %}
-          <span class="meta-item">
-            <span class="meta-icon">↓</span>
-            <span class="meta-val">{{ note.click_count }}</span>
-          </span>
-          {% endif %}
-          {% endif %}
+          {{ card_metrics(note) }}
         </div>
 
         <div class="note-actions">

@@ -70,6 +70,7 @@ class IndependentNotesTests(unittest.TestCase):
             patch.object(web, "_file_url", return_value=None),
             patch.object(web, "_breadcrumb", return_value=[]),
             patch.object(web, "_rating", return_value={"count": 0, "avg": 0, "stars": ""}),
+            patch.object(web, "_attachment_card_rating", return_value={"count": 0, "avg": 0}),
             patch.object(web, "_feedback_context", return_value={
                 "rating": {"count": 0, "avg": 0, "stars": ""},
                 "comments": [], "user_rating": None, "guest_name": "", "shared": False,

@@ -1,0 +1,16 @@
+{% macro card_metrics(card) -%}
+{% set rating = card.get('rating') or {} %}
+{% if rating.get('count', 0) > 0 %}
+<span class="meta-item" aria-label="التقييم {{ rating.avg }} من 5">
+  <span class="meta-stars">{% for i in range(5) %}{% if i < rating.avg|int %}★{% else %}☆{% endif %}{% endfor %}</span>
+  <span class="meta-val">{{ rating.avg }}</span>
+  <span class="meta-dim">({{ rating.count }})</span>
+</span>
+{% endif %}
+{% if (card.get('download_count') or 0) > 0 %}
+<span class="meta-item" aria-label="عدد التحميلات: {{ card.download_count }}">
+  <span class="meta-icon" aria-hidden="true">↓</span>
+  <span class="meta-val">{{ card.download_count }}</span>
+</span>
+{% endif %}
+{%- endmacro %}
