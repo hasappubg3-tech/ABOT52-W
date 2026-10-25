@@ -1704,8 +1704,8 @@ def migrate_mlz_button_emoji_alias(old_alias="9", new_alias="10"):
 
 
 def migrate_remove_diamond_from_emoji10_buttons():
-    """Remove the ordinary 🔶 glyph from labels that use custom emoji alias #10."""
-    migration_key = "remove_diamond_from_emoji10_button_labels_v1"
+    """Remove both ordinary orange diamond glyphs from custom emoji #10 labels."""
+    migration_key = "remove_diamond_from_emoji10_button_labels_v2"
     if get_setting(migration_key, "0") == "1":
         return 0
 
@@ -1725,9 +1725,11 @@ def migrate_remove_diamond_from_emoji10_buttons():
                 continue
 
             label = str(button.get("label") or "")
-            if "🔶" not in label:
+            if not any(glyph in label for glyph in ("🔸", "🔶")):
                 continue
-            cleaned_label = _re.sub(r"\s+", " ", label.replace("🔶", "")).strip()
+            cleaned_label = _re.sub(
+                r"\s+", " ", label.replace("🔸", "").replace("🔶", "")
+            ).strip()
             collection.update_one(
                 {"id": button["id"]},
                 {"$set": {"label": cleaned_label}},

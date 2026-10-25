@@ -10,3 +10,9 @@ This requirement applies to every future automatic addition, not just a one-time
 **Why:** The user requested this format and repeated that future additions must not reproduce the pushpin-wrapped names or nonworking buttons.
 
 **How to apply:** Keep type detection separate from formatting. Reuse the selected custom emoji rather than guessing a decorative symbol. When repairing titles, preserve button identities, file records, links, feedback, and menu mirroring; restrict changes to malformed material names.
+
+Buttons using custom emoji #10 must not have an additional ordinary orange diamond beside it. The user explicitly requires removing the diamond from stored labels, not merely hiding it during rendering.
+
+**Why:** The user repeatedly requested keeping #10 alone and clarified that the unwanted ordinary diamond must be deleted from the database.
+
+**How to apply:** Inspect the actual stored glyph rather than guessing its visually similar Unicode variant; preserve the custom emoji association and unrelated buttons.

@@ -95,11 +95,11 @@ async def post_init(app):
         removed = migrate_remove_diamond_from_emoji10_buttons()
         if removed:
             logging.info(
-                "تم حذف 🔶 من %s من الأزرار المرتبطة بالإيموجي المخصص #10.",
+                "تم حذف المعين البرتقالي من %s من الأزرار المرتبطة بالإيموجي المخصص #10.",
                 removed,
             )
     except Exception:
-        logging.exception("تعذر حذف 🔶 من الأزرار المرتبطة بالإيموجي المخصص #10.")
+        logging.exception("تعذر حذف المعين البرتقالي من الأزرار المرتبطة بالإيموجي المخصص #10.")
     _setup_pomodoro_feature()
     logging.info("تم إعداد ميزة البومودورو.")
     _setup_grade_calc_feature()
