@@ -326,9 +326,10 @@ def build_kb(uid, pid=None):
     else:
         btns = get_buttons(pid)
     parent_b = get_btn(pid) if pid is not None else None
+    # A material list may be stored as a menu or compound folder. Its type
+    # must not decide whether ordinary emoji are removed from file buttons.
     _is_mlz_teacher_material_list = bool(
-        parent_b and parent_b.get("type") == "compound"
-        and _is_study_material_button(pid)
+        pid is not None and _is_study_material_button(pid)
     )
     if menu_sort_by_demand(parent_b) and btns:
         btns = _sort_demand_children(btns)

@@ -124,7 +124,7 @@ class MaterialLabelTests(unittest.TestCase):
             stack.enter_context(patch.object(keyboards, "is_admin", return_value=False))
             stack.enter_context(patch.object(keyboards, "get_buttons_user", return_value=[button]))
             stack.enter_context(patch.object(
-                keyboards, "get_btn", return_value={"id": 300, "type": "compound"},
+                keyboards, "get_btn", return_value={"id": 300, "type": "menu"},
             ))
             stack.enter_context(patch.object(keyboards, "menu_sort_by_demand", return_value=False))
             stack.enter_context(patch.object(
