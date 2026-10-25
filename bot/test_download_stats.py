@@ -29,6 +29,23 @@ class MemoryStatsCollection:
 
 
 class DownloadStatsTests(unittest.TestCase):
+    def test_opening_balance_is_fixed_while_actual_downloads_keep_increasing(self):
+        collection = MemoryStatsCollection()
+        collection.rows[41] = {
+            "item_id": 41, "opening_count": 600,
+            "count": 5, "display_count": 5, "display_updated_at": 10_000,
+        }
+        clock = [10_000]
+        with patch.object(data_access, "_col", return_value=collection), \
+                patch.object(data_access, "canonical_item_id", side_effect=lambda iid: iid), \
+                patch.object(data_access._time, "time", side_effect=lambda: clock[0]):
+            self.assertEqual(data_access.get_item_download_display_count(41), 605)
+            self.assertEqual(data_access.increment_item_download_count(41), 605)
+            self.assertEqual(data_access.get_item_download_total(41), 6)
+            clock[0] += 3601
+            self.assertEqual(data_access.get_item_download_display_count(41), 606)
+        self.assertEqual(collection.rows[41]["opening_count"], 600)
+
     def test_public_snapshot_refreshes_no_more_than_hourly(self):
         collection = MemoryStatsCollection()
         clock = [10_000]

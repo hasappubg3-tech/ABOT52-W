@@ -189,10 +189,12 @@ def _bot_download_display_counts() -> dict:
         timestamp = int(time.time())
         for row in stats.find({}, {
             "item_id": 1, "count": 1, "display_count": 1, "display_updated_at": 1,
+            "opening_count": 1,
         }):
             if row.get("item_id") is None:
                 continue
-            if timestamp - int(row.get("display_updated_at") or 0) >= 3600:
+            if (timestamp - int(row.get("display_updated_at") or 0) >= 3600
+                    and int(row.get("count") or 0) != int(row.get("display_count") or 0)):
                 stats.update_one(
                     {"item_id": row["item_id"],
                      "display_updated_at": row.get("display_updated_at")},
@@ -202,7 +204,10 @@ def _bot_download_display_counts() -> dict:
                     }},
                 )
                 row = stats.find_one({"item_id": row["item_id"]}) or row
-            counts[row["item_id"]] = max(0, int(row.get("display_count") or 0))
+            counts[row["item_id"]] = (
+                max(0, int(row.get("display_count") or 0))
+                + max(0, int(row.get("opening_count") or 0))
+            )
         for twin in _col("item_twins").find({}, {"a": 1, "b": 1}):
             left, right = twin.get("a"), twin.get("b")
             if left is None or right is None:

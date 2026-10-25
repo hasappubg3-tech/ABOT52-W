@@ -948,7 +948,7 @@ def get_item_download_display_count(iid):
             }},
         )
         row = stats.find_one({"item_id": iid}) or {}
-    return int(row.get("display_count") or 0)
+    return int(row.get("display_count") or 0) + max(0, int(row.get("opening_count") or 0))
 
 
 def get_item_download_total(iid):
