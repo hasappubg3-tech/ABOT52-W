@@ -20,3 +20,9 @@ Backup restoration is reserved for the principal administrator; backup download 
 **Why:** Restoring data is more powerful than ordinary administration and can overwrite configuration and access data.
 
 **How to apply:** Do not combine restoration with the delegated download capability.
+
+Owner-only emoji customization must remain available while the owner has enabled «معاينة كمستخدم». Forwarding a message from this bot back to it is an owner shortcut, not a delegated administrator capability.
+
+**Why:** The user explicitly required customization without leaving student preview, and requested forwarding instead of relying on a typed command.
+
+**How to apply:** Check the actual owner identity independently of preview-disabled admin capabilities. Do not grant other administrative actions during preview or intercept forwards from unrelated sources used for uploads.

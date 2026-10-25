@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import time
+from types import SimpleNamespace
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
 from telegram.ext import ExtBot
@@ -21,7 +22,7 @@ _CUSTOM_EMOJI = getattr(MessageEntity, "CUSTOM_EMOJI", "custom_emoji")
 _UI_PREFIX = "🛠 تخصيص الإيموجي:"
 
 _UI_PREFIXES = (
-    "اختر الإيموجي الذي تريد تغييره في آخر رسالة أرسلها البوت:",
+    "اختر الإيموجي الذي تريد تغييره في الرسالة المحددة:",
     "أرسل الإيموجي الجديد الذي تريد استخدامه:",
     "معاينة التغيير المقترح:",
     "✅ تم حفظ تغيير الإيموجي.",
@@ -39,7 +40,9 @@ def is_private_owner_message(uid, chat_id, chat_type):
 
 
 def is_emoji_change_command(text):
-    return " ".join(str(text or "").strip().lower().split()) in {
+    text = re.sub(r"[\u0610-\u061a\u064b-\u065f\u0670\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeffـ]", "", str(text or ""))
+    text = text.replace("إ", "ا").replace("أ", "ا").replace("آ", "ا")
+    return " ".join(text.strip().lower().split()) in {
         "تغيير الايموجي", "تغيير الإيموجي", "غير الايموجي",
         "غير الإيموجي", "تغير الايموجي", "تغير الإيموجي",
         "تغيير الايموجيات", "تغيير الإيموجيات",
@@ -349,27 +352,32 @@ def _is_customization_message(message):
 
 def _capture_owner_message(message, template_key=None):
     global _OWNER_LAST_MESSAGE
-    if not message or not getattr(message, "text", None) or not getattr(message, "chat", None):
+    text = getattr(message, "text", None) or getattr(message, "caption", None)
+    if not message or not text or not getattr(message, "chat", None):
         return
+    is_caption = not bool(getattr(message, "text", None))
+    entities = list(getattr(message, "caption_entities" if is_caption else "entities", None) or ())
     owner_id = os.environ.get("SUPER_ADMIN_ID", "").strip()
     chat = message.chat
     if (not owner_id.isdigit() or str(chat.id) != owner_id
             or getattr(chat, "type", None) != "private"
-            or _message_is_customization_ui(message.text)):
+            or _message_is_customization_ui(text)):
         return
     _OWNER_LAST_MESSAGE = {
         "chat_id": chat.id,
         "message_id": message.message_id,
-        "text": message.text,
-        "entities": list(getattr(message, "entities", None) or ()),
+        "text": text, "entities": entities, "is_caption": is_caption,
         "reply_markup": getattr(message, "reply_markup", None),
-        "template_key": template_key or _template_key(message.text, message.entities),
+        "template_key": template_key or _template_key(text, entities),
         "created_at": time.monotonic(),
     }
 
 
 def _owner_target(message, owner_id):
-    if (message and getattr(message, "text", None)
+    text = getattr(message, "text", None) or getattr(message, "caption", None)
+    is_caption = not bool(getattr(message, "text", None))
+    entities = list(getattr(message, "caption_entities" if is_caption else "entities", None) or ())
+    if (message and text
             and not _is_customization_message(message)
             and getattr(message, "chat", None)
             and str(message.chat.id) == str(owner_id)
@@ -378,14 +386,13 @@ def _owner_target(message, owner_id):
         return {
             "chat_id": message.chat.id,
             "message_id": message.message_id,
-            "text": message.text,
-            "entities": list(getattr(message, "entities", None) or ()),
+            "text": text, "entities": entities, "is_caption": is_caption,
             "reply_markup": getattr(message, "reply_markup", None),
             "template_key": (
                 _OWNER_LAST_MESSAGE["template_key"]
                 if (_OWNER_LAST_MESSAGE
                     and _OWNER_LAST_MESSAGE["message_id"] == message.message_id)
-                else _template_key(message.text, getattr(message, "entities", None))
+                else _template_key(text, entities)
             ),
             "created_at": time.monotonic(),
         }
@@ -407,11 +414,16 @@ def _context_label(text, occurrence):
     return line_text[:40] or f"السطر {occurrence['line'] + 1}"
 
 
-async def begin_emoji_customization(bot, uid, chat_id, chat_type, user_data, replied_message=None):
+async def begin_emoji_customization(bot, uid, chat_id, chat_type, user_data, replied_message=None,
+                                   explicit_target=None):
     global _OWNER_LAST_MESSAGE
     if not is_private_owner_message(uid, chat_id, chat_type):
         return False
-    target = _owner_target(replied_message, uid) or _OWNER_LAST_MESSAGE
+    target = explicit_target if explicit_target is not None else (
+        _owner_target(replied_message, uid) or _OWNER_LAST_MESSAGE
+    )
+    if explicit_target is not None:
+        target = {**target, "created_at": time.monotonic()}
     if not target or time.monotonic() - target["created_at"] > _FLOW_TTL:
         await bot.send_message(
             chat_id=chat_id,
@@ -434,7 +446,10 @@ async def begin_emoji_customization(bot, uid, chat_id, chat_type, user_data, rep
     }
     await bot.send_message(
         chat_id=chat_id,
-        text=_UI_PREFIXES[0],
+        text=_UI_PREFIXES[0] + (
+            "\nالتغييرات تُحفظ للرسائل القادمة. التوجيه لا ينقل أزرار الرسالة الأصلية."
+            if not target.get("editable", True) else ""
+        ),
         reply_markup=_selection_keyboard(user_data[_STATE_KEY], 0),
     )
     return True
@@ -639,13 +654,21 @@ async def handle_owner_emoji_callback(update, context):
             await query.answer("تعذّر حفظ الإعداد. الرسالة لم تتغير.", show_alert=True)
             return True
         try:
-            await context.bot.edit_message_text(
-                chat_id=target["chat_id"],
-                message_id=target["message_id"],
-                text=state["new_text"],
-                entities=state["new_entities"],
-                reply_markup=state.get("new_reply_markup"),
-            )
+            if target.get("editable", True):
+                if target.get("is_caption"):
+                    await context.bot.edit_message_caption(
+                        chat_id=target["chat_id"], message_id=target["message_id"],
+                        caption=state["new_text"], caption_entities=state["new_entities"],
+                        reply_markup=state.get("new_reply_markup"),
+                    )
+                else:
+                    await context.bot.edit_message_text(
+                        chat_id=target["chat_id"],
+                        message_id=target["message_id"],
+                        text=state["new_text"],
+                        entities=state["new_entities"],
+                        reply_markup=state.get("new_reply_markup"),
+                    )
         except Exception:
             logging.exception("Owner emoji customization could not be applied.")
             await query.answer(
@@ -702,3 +725,40 @@ class EmojiCustomizationBot(ExtBot):
     async def edit_message_text(self, *args, **kwargs):
         message = await super().edit_message_text(*args, **kwargs)
         return await customize_outgoing_message(message, super().edit_message_text)
+
+    async def _send_message(self, *args, **kwargs):
+        message = await super()._send_message(*args, **kwargs)
+        return await customize_outgoing_caption(message, super().edit_message_caption)
+
+    async def send_media_group(self, *args, **kwargs):
+        messages = await super().send_media_group(*args, **kwargs)
+        return tuple([
+            await customize_outgoing_caption(message, super().edit_message_caption)
+            for message in messages
+        ])
+
+
+async def customize_outgoing_caption(message, edit_caption):
+    caption = getattr(message, "caption", None)
+    if not caption:
+        return message
+    entities = list(getattr(message, "caption_entities", None) or ())
+    proxy = SimpleNamespace(
+        text=caption, entities=entities,
+        reply_markup=getattr(message, "reply_markup", None),
+    )
+    key = _template_key(caption, entities)
+    try:
+        text, updated_entities, markup = _apply_saved_overrides(proxy)
+        if (text != caption or updated_entities != entities
+                or markup != proxy.reply_markup):
+            result = await edit_caption(
+                chat_id=message.chat_id, message_id=message.message_id,
+                caption=text, caption_entities=updated_entities, reply_markup=markup,
+            )
+            if getattr(result, "caption", None):
+                message = result
+    except Exception:
+        logging.warning("Saved emoji override could not be applied to a bot caption.")
+    _capture_owner_message(message, template_key=key)
+    return message

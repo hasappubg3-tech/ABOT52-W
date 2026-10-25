@@ -64,7 +64,7 @@ def main():
         EmojiCustomizationBot(token=BOT_TOKEN)
     ).post_init(post_init).job_queue(JobQueue()).build()
 
-    media_filter = (filters.TEXT | filters.PHOTO | filters.Document.ALL |
+    media_filter = (filters.TEXT | filters.FORWARDED | filters.PHOTO | filters.Document.ALL |
                     filters.VIDEO | filters.AUDIO | filters.VOICE) & ~filters.COMMAND
 
     app.add_handler(CommandHandler("start", cmd_start))
