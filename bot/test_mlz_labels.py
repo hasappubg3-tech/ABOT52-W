@@ -1,6 +1,7 @@
 """Material-title regressions; no live database writes or Telegram requests."""
 import unittest
 import time
+from copy import deepcopy
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -15,6 +16,18 @@ from bot.admin_permissions import admin_callback_permission
 from bot.mlz_labels import build_mlz_label, legacy_mlz_label_plan
 
 STYLE = {"🔸": "selected-custom-emoji"}
+
+
+class MemoryButtonCollection:
+    def __init__(self, rows):
+        self.rows = deepcopy(rows)
+
+    def find(self, query):
+        return self.rows
+
+    def update_one(self, query, update):
+        row = next(row for row in self.rows if row["id"] == query["id"])
+        row.update(deepcopy(update["$set"]))
 
 
 class MaterialLabelTests(unittest.TestCase):
@@ -55,6 +68,51 @@ class MaterialLabelTests(unittest.TestCase):
                 patch.object(data, "get_emoji_alias", return_value=None):
             with self.assertRaises(ValueError):
                 data.get_mlz_button_emojis()
+
+    def test_switching_material_emoji_updates_existing_teacher_lists_and_future_default(self):
+        old_style = {"⭐": "emoji-9"}
+        new_style = {"🔥": "emoji-10"}
+        live = [
+            {"id": 1, "type": "menu", "label": "الملازم", "parent_id": None},
+            {"id": 2, "type": "menu", "label": "الفيزياء", "parent_id": 1},
+            {"id": 3, "type": "compound", "label": "حسين الهاشمي", "parent_id": 2},
+            {"id": 4, "type": "content", "label": "ملزمة 2026 ⭐",
+             "parent_id": 3, "label_emojis": old_style},
+            {"id": 5, "type": "content", "label": "واجبات 2026 💡",
+             "parent_id": 3, "label_emojis": {"💡": "other-emoji"}},
+            {"id": 6, "type": "content", "label": "ملخص 2025 ⭐", "parent_id": 3},
+            {"id": 10, "type": "menu", "label": "الامتحانات", "parent_id": None},
+            {"id": 11, "type": "menu", "label": "الفيزياء", "parent_id": 10},
+            {"id": 12, "type": "compound", "label": "حسين الهاشمي", "parent_id": 11},
+            {"id": 13, "type": "content", "label": "ملزمة 2026 ⭐",
+             "parent_id": 12, "label_emojis": old_style},
+        ]
+        snapshot = MemoryButtonCollection(live)
+        live_collection = MemoryButtonCollection(live)
+        collections = {
+            "buttons": live_collection,
+            "buttons_snapshot": snapshot,
+        }
+        settings = {"mlz_button_emoji_alias": "9"}
+        aliases = {
+            "9": {"fallback": "⭐", "emoji_id": "emoji-9"},
+            "10": {"fallback": "🔥", "emoji_id": "emoji-10"},
+        }
+        with patch.object(data, "_col", side_effect=lambda name: collections[name]), \
+                patch.object(data, "get_setting",
+                             side_effect=lambda key, default=None: settings.get(key, default)), \
+                patch.object(data, "set_setting",
+                             side_effect=lambda key, value: settings.__setitem__(key, value)), \
+                patch.object(data, "get_emoji_alias", side_effect=aliases.get):
+            updated = data.migrate_mlz_button_emoji_alias("9", "10")
+
+        self.assertEqual(updated, 4)
+        self.assertEqual(settings["mlz_button_emoji_alias"], "10")
+        self.assertEqual(live_collection.rows[3]["label"], "ملزمة 2026 🔥")
+        self.assertEqual(live_collection.rows[3]["label_emojis"], new_style)
+        self.assertEqual(live_collection.rows[4]["label_emojis"], {"💡": "other-emoji"})
+        self.assertEqual(live_collection.rows[9]["label_emojis"], old_style)
+        self.assertEqual(snapshot.rows[3]["label_emojis"], new_style)
 
     def test_repair_only_changes_wrapped_material_content(self):
         buttons = [

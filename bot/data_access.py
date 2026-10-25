@@ -1620,6 +1620,89 @@ def get_mlz_button_emojis():
         )
     return {doc["fallback"]: str(doc["emoji_id"])}
 
+
+def _mlz_teacher_content_button_ids(buttons):
+    """Return active file buttons below teacher folders in ملازم sections."""
+    by_id = {button.get("id"): button for button in buttons if button.get("id") is not None}
+    result = set()
+    for button in buttons:
+        if button.get("type") != "content":
+            continue
+        parent = by_id.get(button.get("parent_id"))
+        if not parent or parent.get("type") != "compound":
+            continue
+        seen = set()
+        while parent and parent.get("id") not in seen:
+            seen.add(parent.get("id"))
+            label = str(parent.get("label") or "").replace("ـ", "")
+            if "ملازم" in label or "ملزمة" in label:
+                result.add(button["id"])
+                break
+            parent = by_id.get(parent.get("parent_id"))
+    return result
+
+
+def _mlz_emoji_migration_values(button, old_style, new_style):
+    """Build a minimal safe update for one existing material title button."""
+    label = str(button.get("label") or "")
+    style = button.get("label_emojis")
+    is_selected_old_emoji = style == old_style
+    is_legacy_button = "label_emojis" not in button and label.rstrip().endswith(
+        next(iter(old_style))
+    )
+    if not is_selected_old_emoji and not is_legacy_button:
+        return None
+
+    values = {"label_emojis": dict(new_style)}
+    old_fallback = next(iter(old_style))
+    new_fallback = next(iter(new_style))
+    trimmed = label.rstrip()
+    if old_fallback and trimmed.endswith(old_fallback):
+        values["label"] = trimmed[:-len(old_fallback)].rstrip() + " " + new_fallback
+    return values
+
+
+def migrate_mlz_button_emoji_alias(old_alias="9", new_alias="10"):
+    """One-time switch of existing teacher material buttons and future default."""
+    migration_key = f"mlz_button_emoji_alias_{old_alias}_to_{new_alias}_migrated"
+    if get_setting(migration_key, "0") == "1":
+        return 0
+    if str(get_setting("mlz_button_emoji_alias", "")) != str(old_alias):
+        return 0
+
+    old = get_emoji_alias(str(old_alias))
+    new = get_emoji_alias(str(new_alias))
+    if not old or not new:
+        raise ValueError(f"Emoji alias #{old_alias} or #{new_alias} is not configured.")
+    if not all((old.get("fallback"), old.get("emoji_id"),
+                new.get("fallback"), new.get("emoji_id"))):
+        raise ValueError(f"Emoji alias #{old_alias} or #{new_alias} is incomplete.")
+
+    old_style = {old["fallback"]: str(old["emoji_id"])}
+    new_style = {new["fallback"]: str(new["emoji_id"])}
+    updated = 0
+    for collection_name in ("buttons", "buttons_snapshot"):
+        collection = _col(collection_name)
+        buttons = list(collection.find({}))
+        material_ids = _mlz_teacher_content_button_ids(buttons)
+        for button in buttons:
+            if button.get("id") not in material_ids:
+                continue
+            values = _mlz_emoji_migration_values(button, old_style, new_style)
+            if values:
+                collection.update_one({"id": button["id"]}, {"$set": values})
+                updated += 1
+
+    set_setting("mlz_button_emoji_alias", str(new_alias))
+    set_setting(migration_key, "1")
+    try:
+        from .keyboards import invalidate_kb_emoji_cache
+        invalidate_kb_emoji_cache()
+    except Exception:
+        pass
+    return updated
+
+
 def get_all_emoji_aliases() -> list:
     return [_d(d) for d in _col("emoji_aliases").find().sort("alias", 1)]
 

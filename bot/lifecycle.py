@@ -79,6 +79,17 @@ async def post_init(app):
             name="auto_backup"
         )
         logging.info("تم جدولة النسخ الاحتياطي التلقائي يومياً عند 03:00 UTC.")
+    try:
+        from .data_access import migrate_mlz_button_emoji_alias
+        updated = migrate_mlz_button_emoji_alias("9", "10")
+        if updated:
+            logging.info(
+                "تم تحويل %s من أزرار الملازم من الإيموجي #9 إلى #10، "
+                "وتعيين #10 للإضافات الجديدة.",
+                updated,
+            )
+    except Exception:
+        logging.exception("تعذر تحويل إيموجي أزرار الملازم من #9 إلى #10.")
     _setup_pomodoro_feature()
     logging.info("تم إعداد ميزة البومودورو.")
     _setup_grade_calc_feature()
