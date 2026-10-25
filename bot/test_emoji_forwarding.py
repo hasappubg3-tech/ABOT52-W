@@ -127,9 +127,31 @@ class EmojiForwardingTests(unittest.TestCase):
                 result = await handle_forwarded_emoji_message(
                     forwarded_message(owner=124), bot, 124, 124, "private", data,
                 )
-            self.assertFalse(result)
+            self.assertTrue(result)
             self.assertEqual(data, {})
-            bot.send_message.assert_not_called()
+            bot.send_message.assert_awaited_once()
+            self.assertIn("غير معرّف كمالك", bot.send_message.await_args.kwargs["text"])
+        asyncio.run(run_check())
+
+    def test_myid_reports_owner_matching_without_revealing_other_owner_id(self):
+        async def run_check():
+            for configured, uid, expected in [
+                ("123", 123, "تم التعرّف عليك كمالك"),
+                ("999999999", 124, "لا تتعرّف على حسابك كمالك"),
+                ("", 123, "لم يتم ضبط SUPER_ADMIN_ID"),
+            ]:
+                with self.subTest(configured=bool(configured), uid=uid):
+                    message = SimpleNamespace(reply_text=AsyncMock())
+                    update = SimpleNamespace(
+                        message=message, effective_user=SimpleNamespace(id=uid),
+                    )
+                    with patch.dict(os.environ, {"SUPER_ADMIN_ID": configured}):
+                        await message_handlers.cmd_myid(update, SimpleNamespace())
+                    text = message.reply_text.await_args.args[0]
+                    self.assertIn(str(uid), text)
+                    self.assertIn(expected, text)
+                    self.assertNotIn("999999999", text)
+                    self.assertIn("صيغة التوجيه الحديثة", text)
         asyncio.run(run_check())
 
     def test_other_bot_forward_does_not_select_the_last_message(self):

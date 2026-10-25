@@ -39,7 +39,7 @@ async def handle_forwarded_emoji_message(message, bot, uid, chat_id, chat_type, 
     legacy_sender = getattr(message, "forward_from", None)
     if not is_forwarded(message):
         return False
-    if not is_private_owner_message(uid, chat_id, chat_type):
+    if chat_type != "private" or str(chat_id) != str(uid):
         return False
 
     sender = _field(origin, "sender_user") if origin else legacy_sender
@@ -50,6 +50,17 @@ async def handle_forwarded_emoji_message(message, bot, uid, chat_id, chat_type, 
     if not current_bot_id or str(_field(sender, "id")) != str(current_bot_id):
         # Other forwarded files must retain their normal upload/content workflow.
         return False
+    if not is_private_owner_message(uid, chat_id, chat_type):
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                "🛠 تخصيص الإيموجي: تعرّفت على رسالة هذا البوت، "
+                "لكن الحساب الحالي غير معرّف كمالك في إعدادات هذه النسخة.\n"
+                "هذه الميزة للمالك فقط، ولا تكفي صلاحية المشرف.\n"
+                "إذا كنت صاحب البوت، أرسل /myid لعرض نتيجة فحص حسابك."
+            ),
+        )
+        return True
 
     is_caption = not bool(getattr(message, "text", None))
     text = getattr(message, "text", None) or getattr(message, "caption", None)

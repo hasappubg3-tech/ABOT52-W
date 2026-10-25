@@ -294,7 +294,28 @@ async def cmd_start(update: Update, ctx):
         inc_user_sessions(uid)
 
 async def cmd_myid(update: Update, ctx):
-    await update.message.reply_text(f"🆔 `{update.effective_user.id}`", parse_mode="Markdown")
+    from .emoji_customization import is_owner as is_emoji_owner
+    uid = update.effective_user.id
+    configured_owner = os.environ.get("SUPER_ADMIN_ID", "").strip()
+    if not configured_owner.isdigit():
+        status = (
+            "لم يتم ضبط SUPER_ADMIN_ID كرقم حساب صحيح في هذه النسخة. "
+            "تخصيص الإيموجيات لن يتاح لأي حساب حتى يُضبط."
+        )
+    elif is_emoji_owner(uid):
+        status = (
+            "تم التعرّف عليك كمالك البوت. تخصيص الإيموجيات متاح لك "
+            "حتى أثناء «معاينة كمستخدم»."
+        )
+    else:
+        status = (
+            "هذه النسخة لا تتعرّف على حسابك كمالك. "
+            "صلاحية المشرف وحدها لا تفتح تخصيص الإيموجيات."
+        )
+    await update.message.reply_text(
+        f"🛠 تخصيص الإيموجي: فحص الحساب\n🆔 رقم حسابك: {uid}\n\n"
+        f"{status}\n\nفحص صيغة التوجيه الحديثة: موجود في هذه النسخة."
+    )
 
 async def cmd_webstats(update: Update, ctx):
     uid = update.effective_user.id if update.effective_user else None
