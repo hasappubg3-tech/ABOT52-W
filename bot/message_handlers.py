@@ -468,15 +468,17 @@ async def on_message(update: Update, ctx):
     state = ctx.user_data.get("state")
     pid = ctx.user_data.get("pid")
     chat_id = m.chat_id
+    emoji_chat_type = getattr(getattr(m, "chat", None), "type", None)
 
     if (is_emoji_change_command(raw_text)
-            and is_private_owner_message(uid, chat_id, m.chat.type)):
+            and is_private_owner_message(uid, chat_id, emoji_chat_type)):
         await begin_emoji_customization(
-            ctx.bot, uid, chat_id, m.chat.type, ctx.user_data, m.reply_to_message,
+            ctx.bot, uid, chat_id, emoji_chat_type, ctx.user_data,
+            getattr(m, "reply_to_message", None),
         )
         return
     if await handle_owner_emoji_input(
-        m, ctx.bot, uid, chat_id, m.chat.type, ctx.user_data,
+        m, getattr(ctx, "bot", None), uid, chat_id, emoji_chat_type, ctx.user_data,
     ):
         return
 

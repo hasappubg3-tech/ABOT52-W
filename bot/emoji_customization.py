@@ -1,18 +1,19 @@
 """Owner-only in-chat emoji replacement for bot messages and reusable text templates."""
-import copy
 import hashlib
 import logging
 import os
+import re
 import secrets
 import time
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
+from telegram.ext import ExtBot
+from bot.emoji_buttons import button_occurrences, preview_keyboard, replace_button_icon
 
 from .shared import get_mongo_db
 
 _OWNER_LAST_MESSAGE = None
 _OVERRIDE_CACHE = {"expires": 0.0, "values": {}}
-_BOT_ORIGINAL_METHODS = {}
 _OVERRIDE_TTL = 30
 _FLOW_TTL = 600
 _STATE_KEY = "bot_emoji_customization"
@@ -41,15 +42,24 @@ def is_emoji_change_command(text):
     return " ".join(str(text or "").strip().lower().split()) in {
         "تغيير الايموجي", "تغيير الإيموجي", "غير الايموجي",
         "غير الإيموجي", "تغير الايموجي", "تغير الإيموجي",
+        "تغيير الايموجيات", "تغيير الإيموجيات",
+        "تغير الايموجيات", "تغير الإيموجيات",
     }
 
 
-def _template_key(text):
-    if text.startswith("⭐ تقييم الملف:"):
-        return "rating:item"
-    if text.startswith("⭐ تقييم المحتوى:"):
-        return "rating:button"
-    return "exact:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+def _template_key(text, entities=None):
+    lines = text.split("\n")
+    if any("عدد التقييمات:" in line for line in lines):
+        for index, line in enumerate(lines[:4]):
+            if "تقييم الملف:" in line:
+                return f"rating:item:{index}"
+            if "تقييم المحتوى:" in line:
+                return f"rating:button:{index}"
+    normalized = text
+    for span in reversed(emoji_occurrences(text, entities)):
+        normalized = normalized[:span["start"]] + "<emoji>" + normalized[span["end"]:]
+    normalized = re.sub(r"\d+", "#", normalized)
+    return "message:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _utf16_length(text):
@@ -75,7 +85,7 @@ def _copy_entity(entity, offset=None, length=None):
         values["offset"] = offset
     if length is not None:
         values["length"] = length
-    return MessageEntity(**values)
+    return MessageEntity.de_json(values, None)
 
 
 def _emoji_base(char):
@@ -223,20 +233,25 @@ def _load_overrides():
     if now < _OVERRIDE_CACHE["expires"]:
         return _OVERRIDE_CACHE["values"]
     values = {}
-    for row in _collection().find({}, {"_id": 1, "occurrences": 1}):
-        values[row["_id"]] = row.get("occurrences") or {}
+    for row in _collection().find({}, {"_id": 1, "occurrences": 1, "buttons": 1}):
+        values[row["_id"]] = row
     _OVERRIDE_CACHE.update(values=values, expires=now + _OVERRIDE_TTL)
     return values
 
 
 def _save_override(template_key, span, glyph, custom_emoji_id):
-    field = f"occurrences.{span['line']}.{span['position']}"
+    is_button = span.get("scope") == "button"
+    field = (f"buttons.{span['row']}.{span['column']}" if is_button
+             else f"occurrences.{span['line']}.{span['position']}")
+    replacement = {
+        "glyph": glyph,
+        "custom_emoji_id": str(custom_emoji_id) if custom_emoji_id else "",
+    }
+    if is_button:
+        replacement["signature"] = span["signature"]
     _collection().update_one(
         {"_id": template_key},
-        {"$set": {field: {
-            "glyph": glyph,
-            "custom_emoji_id": str(custom_emoji_id) if custom_emoji_id else "",
-        }}},
+        {"$set": {field: replacement}},
         upsert=True,
     )
     _OVERRIDE_CACHE["expires"] = 0.0
@@ -244,16 +259,17 @@ def _save_override(template_key, span, glyph, custom_emoji_id):
 
 def _apply_saved_overrides(message):
     text = getattr(message, "text", None)
+    markup = getattr(message, "reply_markup", None)
     if not text:
-        return text, list(getattr(message, "entities", None) or ())
-    key = _template_key(text)
+        return text, list(getattr(message, "entities", None) or ()), markup
+    key = _template_key(text, getattr(message, "entities", None))
     saved = _load_overrides().get(key, {})
     entities = list(getattr(message, "entities", None) or ())
     spans = emoji_occurrences(text, entities)
     slots = {(span["line"], span["position"]): index
              for index, span in enumerate(spans)}
     replacements = []
-    for line_key, row in saved.items():
+    for line_key, row in saved.get("occurrences", {}).items():
         try:
             line = int(line_key)
         except (TypeError, ValueError):
@@ -277,7 +293,14 @@ def _apply_saved_overrides(message):
             replacements.append((occurrence_index, new_glyph, custom_id))
     for occurrence_index, glyph, custom_id in sorted(replacements, reverse=True):
         text, entities = replace_emoji(text, entities, occurrence_index, glyph, custom_id)
-    return text, entities
+    for span in button_occurrences(markup, emoji_occurrences):
+        replacement = saved.get("buttons", {}).get(str(span["row"]), {}).get(str(span["column"]))
+        if replacement and replacement.get("signature") == span["signature"]:
+            markup = replace_button_icon(
+                markup, span, replacement["glyph"],
+                replacement.get("custom_emoji_id"), emoji_occurrences,
+            )
+    return text, entities, markup
 
 
 def _message_is_customization_ui(text):
@@ -287,7 +310,17 @@ def _message_is_customization_ui(text):
     ))
 
 
-def _capture_owner_message(message):
+def _is_customization_message(message):
+    if _message_is_customization_ui(getattr(message, "text", None)):
+        return True
+    return any(
+        str(button.callback_data or "").startswith("emoji_custom_")
+        for row in getattr(getattr(message, "reply_markup", None), "inline_keyboard", ()) or ()
+        for button in row
+    )
+
+
+def _capture_owner_message(message, template_key=None):
     global _OWNER_LAST_MESSAGE
     if not message or not getattr(message, "text", None) or not getattr(message, "chat", None):
         return
@@ -302,14 +335,15 @@ def _capture_owner_message(message):
         "message_id": message.message_id,
         "text": message.text,
         "entities": list(getattr(message, "entities", None) or ()),
-        "template_key": _template_key(message.text),
+        "reply_markup": getattr(message, "reply_markup", None),
+        "template_key": template_key or _template_key(message.text, message.entities),
         "created_at": time.monotonic(),
     }
 
 
 def _owner_target(message, owner_id):
     if (message and getattr(message, "text", None)
-            and not _message_is_customization_ui(message.text)
+            and not _is_customization_message(message)
             and getattr(message, "chat", None)
             and str(message.chat.id) == str(owner_id)
             and getattr(message.chat, "type", None) == "private"
@@ -319,7 +353,13 @@ def _owner_target(message, owner_id):
             "message_id": message.message_id,
             "text": message.text,
             "entities": list(getattr(message, "entities", None) or ()),
-            "template_key": _template_key(message.text),
+            "reply_markup": getattr(message, "reply_markup", None),
+            "template_key": (
+                _OWNER_LAST_MESSAGE["template_key"]
+                if (_OWNER_LAST_MESSAGE
+                    and _OWNER_LAST_MESSAGE["message_id"] == message.message_id)
+                else _template_key(message.text, getattr(message, "entities", None))
+            ),
             "created_at": time.monotonic(),
         }
     if (_OWNER_LAST_MESSAGE
@@ -330,6 +370,8 @@ def _owner_target(message, owner_id):
 
 
 def _context_label(text, occurrence):
+    if occurrence.get("scope") == "button":
+        return "زر: " + occurrence["label"][:45]
     line_start = text.rfind("\n", 0, occurrence["start"]) + 1
     line_end = text.find("\n", occurrence["end"])
     if line_end < 0:
@@ -351,6 +393,7 @@ async def begin_emoji_customization(bot, uid, chat_id, chat_type, user_data, rep
         return True
 
     occurrences = emoji_occurrences(target["text"], target["entities"])
+    occurrences += button_occurrences(target.get("reply_markup"), emoji_occurrences)
     if not occurrences:
         await bot.send_message(
             chat_id=chat_id,
@@ -358,26 +401,43 @@ async def begin_emoji_customization(bot, uid, chat_id, chat_type, user_data, rep
         )
         return True
     nonce = secrets.token_hex(5)
-    keyboard = [
-        [InlineKeyboardButton(
-            f"{index + 1}. {span['glyph']} — {_context_label(target['text'], span)}",
-            callback_data=f"emoji_custom_select:{nonce}:{index}",
-        )]
-        for index, span in enumerate(occurrences[:80])
-    ]
-    keyboard.append([InlineKeyboardButton(
-        "إلغاء", callback_data=f"emoji_custom_cancel:{nonce}",
-    )])
     user_data[_STATE_KEY] = {
         "nonce": nonce, "phase": "select", "target": target,
-        "occurrences": occurrences[:80], "created_at": time.monotonic(),
+        "occurrences": occurrences, "created_at": time.monotonic(),
     }
     await bot.send_message(
         chat_id=chat_id,
         text=_UI_PREFIXES[0],
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=_selection_keyboard(user_data[_STATE_KEY], 0),
     )
     return True
+
+
+def _selection_keyboard(state, page):
+    start = page * 20
+    nonce = state["nonce"]
+    keyboard = [
+        [InlineKeyboardButton(
+            f"{index + 1}. {span['glyph']} — {_context_label(state['target']['text'], span)}",
+            callback_data=f"emoji_custom_select:{nonce}:{index}",
+        )]
+        for index, span in enumerate(state["occurrences"][start:start + 20], start)
+    ]
+    navigation = []
+    if page:
+        navigation.append(InlineKeyboardButton(
+            "السابق", callback_data=f"emoji_custom_page:{nonce}:{page - 1}",
+        ))
+    if start + 20 < len(state["occurrences"]):
+        navigation.append(InlineKeyboardButton(
+            "التالي", callback_data=f"emoji_custom_page:{nonce}:{page + 1}",
+        ))
+    if navigation:
+        keyboard.append(navigation)
+    keyboard.append([InlineKeyboardButton(
+        "إلغاء", callback_data=f"emoji_custom_cancel:{nonce}",
+    )])
+    return InlineKeyboardMarkup(keyboard)
 
 
 def _is_single_emoji_message(message):
@@ -398,7 +458,6 @@ async def handle_owner_emoji_input(message, bot, uid, chat_id, chat_type, user_d
         return False
     if not is_private_owner_message(uid, chat_id, chat_type):
         user_data.pop(_STATE_KEY, None)
-        user_data.pop("state", None)
         return False
     if time.monotonic() - state.get("created_at", 0) > _FLOW_TTL:
         user_data.pop(_STATE_KEY, None)
@@ -415,11 +474,20 @@ async def handle_owner_emoji_input(message, bot, uid, chat_id, chat_type, user_d
             )
             return True
         target = state["target"]
+        selected = state["occurrences"][state["occurrence_index"]]
+        new_markup = target.get("reply_markup")
         try:
-            new_text, new_entities = replace_emoji(
-                target["text"], target["entities"], state["occurrence_index"],
-                span["glyph"], span.get("custom_emoji_id"),
-            )
+            if selected.get("scope") == "button":
+                new_text, new_entities = target["text"], target["entities"]
+                new_markup = replace_button_icon(
+                    new_markup, selected, span["glyph"],
+                    span.get("custom_emoji_id"), emoji_occurrences,
+                )
+            else:
+                new_text, new_entities = replace_emoji(
+                    target["text"], target["entities"], state["occurrence_index"],
+                    span["glyph"], span.get("custom_emoji_id"),
+                )
         except ValueError:
             user_data.pop(_STATE_KEY, None)
             await bot.send_message(
@@ -429,6 +497,8 @@ async def handle_owner_emoji_input(message, bot, uid, chat_id, chat_type, user_d
             return True
 
         prefix = _UI_PREFIXES[2] + "\n\n"
+        if len(prefix + new_text) > 4096:
+            prefix = ""
         shift = _utf16_length(prefix)
         preview_entities = [
             _copy_entity(entity, offset=entity.offset + shift)
@@ -439,6 +509,7 @@ async def handle_owner_emoji_input(message, bot, uid, chat_id, chat_type, user_d
             "phase": "confirm",
             "new_text": new_text,
             "new_entities": new_entities,
+            "new_reply_markup": new_markup,
             "new_glyph": span["glyph"],
             "new_custom_emoji_id": span.get("custom_emoji_id"),
         }
@@ -446,10 +517,7 @@ async def handle_owner_emoji_input(message, bot, uid, chat_id, chat_type, user_d
             chat_id=chat_id,
             text=prefix + new_text,
             entities=preview_entities,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("حفظ التغيير", callback_data=f"emoji_custom_save:{state['nonce']}"),
-                InlineKeyboardButton("إلغاء", callback_data=f"emoji_custom_cancel:{state['nonce']}"),
-            ]]),
+            reply_markup=preview_keyboard(new_markup, state["nonce"]),
         )
         return True
     if state["phase"] == "confirm":
@@ -486,6 +554,22 @@ async def handle_owner_emoji_callback(update, context):
         return True
 
     action = parts[0]
+    if action == "emoji_custom_preview":
+        await query.answer("هذه معاينة فقط.")
+        return True
+    if action == "emoji_custom_page" and state["phase"] == "select" and len(parts) == 3:
+        try:
+            page = int(parts[2])
+            if page < 0 or page * 20 >= len(state["occurrences"]):
+                raise ValueError
+        except ValueError:
+            await query.answer("الصفحة غير صالحة.", show_alert=True)
+            return True
+        await query.answer()
+        await query.edit_message_text(
+            _UI_PREFIXES[0], reply_markup=_selection_keyboard(state, page),
+        )
+        return True
     if action == "emoji_custom_cancel":
         context.user_data.pop(_STATE_KEY, None)
         await query.answer("تم الإلغاء.")
@@ -498,6 +582,8 @@ async def handle_owner_emoji_callback(update, context):
     if action == "emoji_custom_select" and state["phase"] == "select" and len(parts) == 3:
         try:
             index = int(parts[2])
+            if index < 0:
+                raise ValueError
             span = state["occurrences"][index]
         except (ValueError, IndexError):
             await query.answer("الإيموجي المحدد غير صالح.", show_alert=True)
@@ -531,6 +617,7 @@ async def handle_owner_emoji_callback(update, context):
                 message_id=target["message_id"],
                 text=state["new_text"],
                 entities=state["new_entities"],
+                reply_markup=state.get("new_reply_markup"),
             )
         except Exception:
             logging.exception("Owner emoji customization could not be applied.")
@@ -551,49 +638,40 @@ async def handle_owner_emoji_callback(update, context):
     return True
 
 
-def install_bot_emoji_customization(bot):
-    """Track the owner's latest text message and apply saved template overrides."""
-    if getattr(bot, "_emoji_customization_installed", False):
-        return
-    original_send = bot.send_message
-    original_edit = bot.edit_message_text
-    _BOT_ORIGINAL_METHODS[id(bot)] = (original_send, original_edit)
-
-    async def apply_and_capture(message):
-        if not message:
-            return message
-        text = getattr(message, "text", None)
-        if not text or _message_is_customization_ui(text):
-            _capture_owner_message(message)
-            return message
-        try:
-            new_text, entities = _apply_saved_overrides(message)
-            if new_text != text or entities != list(getattr(message, "entities", None) or ()):
-                result = await original_edit(
-                    chat_id=message.chat_id,
-                    message_id=message.message_id,
-                    text=new_text,
-                    entities=entities,
-                )
-                if result and getattr(result, "text", None):
-                    message = result
-        except Exception:
-            logging.warning("Saved emoji override could not be applied to a bot message.")
-        _capture_owner_message(message)
+async def customize_outgoing_message(message, edit_message):
+    """Apply overrides to a Telegram-parsed message, preserving its entities."""
+    if not message:
         return message
-
-    async def tracked_send_message(*args, **kwargs):
-        message = await original_send(*args, **kwargs)
-        return await apply_and_capture(message)
-
-    async def tracked_edit_message_text(*args, **kwargs):
-        message = await original_edit(*args, **kwargs)
-        return await apply_and_capture(message)
-
+    text = getattr(message, "text", None)
+    if not text or _is_customization_message(message):
+        return message
+    key = _template_key(text, getattr(message, "entities", None))
     try:
-        bot.send_message = tracked_send_message
-        bot.edit_message_text = tracked_edit_message_text
-        bot._emoji_customization_installed = True
+        new_text, entities, markup = _apply_saved_overrides(message)
+        if (new_text != text or entities != list(getattr(message, "entities", None) or ())
+                or markup != getattr(message, "reply_markup", None)):
+            result = await edit_message(
+                chat_id=message.chat_id,
+                message_id=message.message_id,
+                text=new_text,
+                entities=entities,
+                reply_markup=markup,
+            )
+            if result and getattr(result, "text", None):
+                message = result
     except Exception:
-        _BOT_ORIGINAL_METHODS.pop(id(bot), None)
-        logging.exception("Could not initialize owner emoji customization hooks.")
+        logging.warning("Saved emoji override could not be applied to a bot message.")
+    _capture_owner_message(message, template_key=key)
+    return message
+
+
+class EmojiCustomizationBot(ExtBot):
+    """Use supported ExtBot overrides rather than mutating immutable bot methods."""
+
+    async def send_message(self, *args, **kwargs):
+        message = await super().send_message(*args, **kwargs)
+        return await customize_outgoing_message(message, super().edit_message_text)
+
+    async def edit_message_text(self, *args, **kwargs):
+        message = await super().edit_message_text(*args, **kwargs)
+        return await customize_outgoing_message(message, super().edit_message_text)

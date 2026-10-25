@@ -1,5 +1,5 @@
 from bot.shared import *
-from bot.emoji_customization import install_bot_emoji_customization
+from bot.emoji_customization import EmojiCustomizationBot
 from bot.loader import load_bot_symbols
 
 globals().update(load_bot_symbols())
@@ -60,8 +60,9 @@ def main():
     except Exception as e:
         logging.warning(f"تعذّر حذف الـ webhook: {e}")
 
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).job_queue(JobQueue()).build()
-    install_bot_emoji_customization(app.bot)
+    app = Application.builder().bot(
+        EmojiCustomizationBot(token=BOT_TOKEN)
+    ).post_init(post_init).job_queue(JobQueue()).build()
 
     media_filter = (filters.TEXT | filters.PHOTO | filters.Document.ALL |
                     filters.VIDEO | filters.AUDIO | filters.VOICE) & ~filters.COMMAND
