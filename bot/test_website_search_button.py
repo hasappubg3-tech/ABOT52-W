@@ -38,7 +38,8 @@ class WebsiteSearchButtonTests(unittest.TestCase):
         button = self._build_keyboard(14433)
         self.assertEqual(
             button.web_app.url,
-            "https://alameer-iq.com/?open_search=1",
+            "https://alameer-iq.com/?open_search=1"
+            "&utm_source=telegram&utm_medium=bot&utm_campaign=search_button",
         )
         self.assertEqual(button.text, "بحث الموقع")
 

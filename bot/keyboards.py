@@ -3,7 +3,11 @@ import time as _ktime
 from .shared import *
 from .data_access import get_item
 
-WEBSITE_SEARCH_URL = "https://alameer-iq.com/?open_search=1"
+WEBSITE_SEARCH_URL = (
+    "https://alameer-iq.com/?open_search=1"
+    "&utm_source=telegram&utm_medium=bot&utm_campaign=search_button"
+)
+WEBSITE_STATS_URL = "https://alameer-iq.com/admin/stats"
 
 # ── Cache للإيموجي المخصصة (لتجنب استعلام MongoDB في كل بناء keyboard) ──
 _emoji_cache: dict = {}   # {fallback_char: emoji_id}

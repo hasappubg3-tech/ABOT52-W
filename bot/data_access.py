@@ -1,5 +1,6 @@
 from .shared import *
 from .admin_permissions import *
+import re as _re
 import time as _time
 
 # ── مساعد: تحويل وثيقة MongoDB إلى dict مشابه لـ sqlite3.Row ──────
@@ -45,6 +46,7 @@ def init_db():
     mdb["exam_questions"].create_index([("id", ASCENDING)], unique=True)
     mdb["exam_progress"].create_index([("user_id", ASCENDING), ("exam_button_id", ASCENDING)], unique=True)
     mdb["item_ratings"].create_index([("item_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
+    mdb["item_download_stats"].create_index([("item_id", ASCENDING)], unique=True)
     mdb["button_ratings"].create_index([("button_id", ASCENDING), ("user_id", ASCENDING)], unique=True)
     mdb["daily_stats"].create_index([("date", ASCENDING)], unique=True)
     mdb["user_button_clicks"].create_index([("user_id", ASCENDING), ("button_id", ASCENDING)], unique=True)
@@ -895,6 +897,78 @@ def upd_items_desc(bid, new_desc, _sync=True):
 def get_item(iid):
     return _d(_col("content_items").find_one({"id": iid}))
 
+def _is_study_material_button(bid):
+    """True only below a ملازم/books/summaries folder, not exam-answer sections."""
+    current = get_btn(bid)
+    visited = set()
+    material_words = {"ملازم", "ملزم", "ملزمة", "ملخص", "ملخصات", "كتاب", "كتب"}
+    while current and current.get("id") not in visited:
+        visited.add(current.get("id"))
+        if current.get("type") in {"menu", "compound"}:
+            label = str(current.get("label") or "").replace("ـ", "")
+            label = _re.sub(r"[\u064b-\u065f\u0670]", "", label)
+            label = label.translate(str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا"}))
+            words = {
+                word[2:] if word.startswith("ال") else word
+                for word in _re.findall(r"[\u0600-\u06ff]+", label)
+            }
+            if words & material_words:
+                return True
+        parent_id = current.get("parent_id")
+        current = get_btn(parent_id) if parent_id is not None else None
+    return False
+
+
+def increment_item_download_count(iid):
+    """Count one successfully delivered document; repeated sends count again."""
+    iid = canonical_item_id(iid)
+    now = int(_time.time())
+    stats = _col("item_download_stats")
+    stats.update_one(
+        {"item_id": iid},
+        {
+            "$inc": {"count": 1},
+            "$setOnInsert": {"item_id": iid, "display_count": 0, "display_updated_at": 0},
+        },
+        upsert=True,
+    )
+    current = stats.find_one({"item_id": iid}) or {}
+    last_display_update = int(current.get("display_updated_at") or 0)
+    if now - last_display_update >= 3600:
+        stats.update_one(
+            {"item_id": iid, "display_updated_at": current.get("display_updated_at")},
+            {"$set": {
+                "display_count": int(current.get("count") or 0),
+                "display_updated_at": now,
+            }},
+        )
+    return get_item_download_display_count(iid)
+
+
+def get_item_download_display_count(iid):
+    iid = canonical_item_id(iid)
+    row = _col("item_download_stats").find_one({"item_id": iid}) or {}
+    return int(row.get("display_count") or 0)
+
+
+def get_item_download_total(iid):
+    iid = canonical_item_id(iid)
+    row = _col("item_download_stats").find_one({"item_id": iid}) or {}
+    return int(row.get("count") or 0)
+
+
+def get_button_download_display_total(bid):
+    if not _is_study_material_button(bid):
+        return 0
+    item_ids = {
+        canonical_item_id(item["id"])
+        for item in get_items(bid)
+        if item.get("id") is not None and item.get("type") in {"file", "document"}
+    }
+    if not item_ids:
+        return 0
+    return sum(get_item_download_display_count(iid) for iid in item_ids)
+
 def set_item_website_hidden(iid, hidden, _sync=True):
     """يخفي عنصر الملزمة عن الموقع فقط، مع إبقائه متاحاً في البوت."""
     item = get_item(iid)
@@ -964,7 +1038,13 @@ def item_rating_text(iid: int, uid: int | None = None) -> str:
         user_rating = get_user_item_rating(iid, uid)
         if user_rating:
             user_line = f"\n✅ تقييمك: {user_rating}/5"
-    return f"{rating_line}\n{count_line}{user_line}"
+    item = get_item(iid)
+    download_line = ""
+    if (item and item.get("type") in {"file", "document"}
+            and item.get("button_id")
+            and _is_study_material_button(item["button_id"])):
+        download_line = f"\n📥 عدد التحميلات: {get_item_download_display_count(iid)}"
+    return f"{rating_line}\n{count_line}{download_line}{user_line}"
 
 def kb_item_rating(iid: int):
     return InlineKeyboardMarkup([[
@@ -1025,7 +1105,10 @@ def btn_rating_text(bid: int, uid: int | None = None) -> str:
         user_rating = get_user_btn_rating(bid, uid)
         if user_rating:
             user_line = f"\n✅ تقييمك: {user_rating}/5"
-    return f"{rating_line}\n{count_line}{user_line}"
+    download_line = ""
+    if _is_study_material_button(bid):
+        download_line = f"\n📥 عدد التحميلات: {get_button_download_display_total(bid)}"
+    return f"{rating_line}\n{count_line}{download_line}{user_line}"
 
 def get_library_btn_label() -> str:
     return get_setting("library_btn_label", "⚜️شراء من مكتبة الامير⚜️")

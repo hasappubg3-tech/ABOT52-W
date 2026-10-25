@@ -76,6 +76,9 @@
           <span class="meta-item">
             <span class="meta-val">{{ note.subtitle | strip_emoji }}</span>
           </span>
+          {% if note.download_count is not none %}
+          <span class="meta-item">📥 <span class="meta-val">{{ note.download_count }}</span> تحميل</span>
+          {% endif %}
           {% else %}
           {% if note.rating.count > 0 %}
           <span class="meta-item">

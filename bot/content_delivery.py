@@ -1,5 +1,6 @@
 from .shared import *
 from .download_targets import encode_delivery_target, parse_delivery_target
+from .data_access import _is_study_material_button, increment_item_download_count
 import html as _html
 import re as _re
 from telegram import InputMediaPhoto, InputMediaVideo, InputMediaDocument
@@ -268,6 +269,22 @@ def _group_items(items):
     return groups
 
 
+def _record_successful_study_downloads(bid, items):
+    try:
+        if not _is_study_material_button(bid):
+            return
+    except Exception:
+        logging.warning("تعذر تحديد قسم الملف لتسجيل التحميل")
+        return
+    for item in items:
+        if item.get("type") not in {"file", "document"} or item.get("id") is None:
+            continue
+        try:
+            increment_item_download_count(item["id"])
+        except Exception:
+            logging.warning("تعذر تحديث عداد تحميل ملف أُرسل بنجاح")
+
+
 async def send_media_group_items(bot, chat_id, items, extra_caption="", reply_markup=None):
     """يُرسل قائمة عناصر وسائط كألبوم واحد (media group) دفعة واحدة."""
     media = []
@@ -421,9 +438,15 @@ async def deliver_denied_content(bot, chat_id, bid_str):
     for group in _group_items(items):
         try:
             if len(group) > 1:
-                await send_media_group_items(bot, chat_id, group, extra_caption=extra, reply_markup=markup)
+                sent = await send_media_group_items(
+                    bot, chat_id, group, extra_caption=extra, reply_markup=markup
+                )
             else:
-                await send_file_item(target, group[0], extra_caption=extra, reply_markup=markup, bot=bot)
+                sent = await send_file_item(
+                    target, group[0], extra_caption=extra, reply_markup=markup, bot=bot
+                )
+            if sent:
+                _record_successful_study_downloads(bid_int, group)
         except Exception as e:
             logging.warning(f"deliver_denied_content: {e}")
 
@@ -512,12 +535,16 @@ async def send_items(m, bid, uid=None, bot=None, item_id=None):
                 extra_caption=extra_cap, reply_markup=link_markup
             )
             delivered_any = delivered_any or bool(sent_list)
+            if sent_list and uid and not is_admin(uid):
+                _record_successful_study_downloads(bid, group)
             if sent_list and uid and not is_admin(uid) and not unified and not ratings_hidden:
                 await send_item_rating_message(m, group[0], uid=uid)
         else:
             item = group[0]
             sent = await send_file_item(m, item, extra_caption=extra_cap, reply_markup=link_markup, bot=bot)
             delivered_any = delivered_any or bool(sent)
+            if sent and uid and not is_admin(uid):
+                _record_successful_study_downloads(bid, [item])
             if sent and uid and not is_admin(uid) and not unified and not ratings_hidden:
                 await send_item_rating_message(m, item, uid=uid)
 

@@ -291,6 +291,24 @@ async def cmd_start(update: Update, ctx):
 async def cmd_myid(update: Update, ctx):
     await update.message.reply_text(f"🆔 `{update.effective_user.id}`", parse_mode="Markdown")
 
+async def cmd_webstats(update: Update, ctx):
+    uid = update.effective_user.id if update.effective_user else None
+    owner_id = os.environ.get("SUPER_ADMIN_ID", "").strip()
+    if not uid or not owner_id.isdigit() or str(uid) != owner_id:
+        await update.message.reply_text("هذا الأمر مخصص لمالك البوت.")
+        return
+
+    markup = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "فتح لوحة إحصائيات الموقع",
+            web_app=WebAppInfo(url=WEBSITE_STATS_URL),
+        )
+    ]])
+    await update.message.reply_text(
+        "لوحة إحصائيات الموقع خاصة بحساب مالك البوت.",
+        reply_markup=markup,
+    )
+
 async def cmd_storage_status(update: Update, ctx):
     uid = update.effective_user.id
     if not has_permission(uid, "bot_settings"):

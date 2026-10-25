@@ -8,9 +8,13 @@ import time
 import logging
 import unicodedata
 import secrets
+import hashlib
+import hmac
+import json
 from xml.etree import ElementTree as ET
 from datetime import datetime, timedelta
 from threading import Lock
+from urllib.parse import parse_qsl, urlparse
 import requests as _req
 from flask import Flask, render_template, jsonify, request, redirect, abort, url_for, Response, session, flash, g, has_request_context
 from pymongo.errors import PyMongoError
@@ -154,6 +158,10 @@ _latest_notes_cache = {
     "items": None,
 }
 _latest_notes_lock = Lock()
+_DOWNLOAD_DISPLAY_CACHE = {"expires": 0.0, "counts": {}}
+_DOWNLOAD_DISPLAY_LOCK = Lock()
+_TRAFFIC_INDEX_LOCK = Lock()
+_traffic_indexes_ready = False
 
 
 def _get_mongo():
@@ -163,6 +171,188 @@ def _get_mongo():
 
 def _col(name: str):
     return _get_mongo()[name]
+
+
+def _bot_download_display_counts() -> dict:
+    """Read the bot's hourly snapshots once per minute for all website cards."""
+    now = time.monotonic()
+    if now < _DOWNLOAD_DISPLAY_CACHE["expires"]:
+        return _DOWNLOAD_DISPLAY_CACHE["counts"]
+    with _DOWNLOAD_DISPLAY_LOCK:
+        now = time.monotonic()
+        if now < _DOWNLOAD_DISPLAY_CACHE["expires"]:
+            return _DOWNLOAD_DISPLAY_CACHE["counts"]
+        counts = {
+            row["item_id"]: max(0, int(row.get("display_count") or 0))
+            for row in _col("item_download_stats").find(
+                {}, {"item_id": 1, "display_count": 1}
+            )
+            if row.get("item_id") is not None
+        }
+        for twin in _col("item_twins").find({}, {"a": 1, "b": 1}):
+            left, right = twin.get("a"), twin.get("b")
+            if left is None or right is None:
+                continue
+            canonical = min(left, right)
+            display_count = counts.get(canonical, 0)
+            counts[left] = display_count
+            counts[right] = display_count
+        _DOWNLOAD_DISPLAY_CACHE.update(
+            counts=counts, expires=time.monotonic() + 60
+        )
+        return counts
+
+
+def _download_tracking_for_button(button_id: int) -> bool:
+    _search_index_records()
+    return any(
+        record["button"].get("id") == button_id and record.get("download_tracking")
+        for record in _search_index_cache.get("attachment_records", [])
+    )
+
+
+def _attachment_download_count(button_id: int, item_id: int) -> int | None:
+    if not _download_tracking_for_button(button_id):
+        return None
+    return _bot_download_display_counts().get(item_id, 0)
+
+
+def _attachment_download_count_from_record(record: dict, item_id: int) -> int | None:
+    if not record.get("download_tracking"):
+        return None
+    return _bot_download_display_counts().get(item_id, 0)
+
+
+def _safe_traffic_tag(value, allowed: set[str]) -> str:
+    value = str(value or "").strip().lower()
+    return value if value in allowed else ""
+
+
+def _classify_traffic_source():
+    """Return a privacy-safe source label, never a full referrer or query."""
+    sources = {
+        "telegram", "google", "bing", "duckduckgo", "yahoo",
+        "facebook", "instagram", "whatsapp", "youtube", "tiktok",
+    }
+    mediums = {"bot", "organic", "social", "referral", "link", "email"}
+    campaigns = {"search_button", "website_share", "bot_search", "other"}
+    tagged_source = _safe_traffic_tag(request.args.get("utm_source"), sources)
+    if tagged_source:
+        return (
+            tagged_source,
+            _safe_traffic_tag(request.args.get("utm_medium"), mediums),
+            _safe_traffic_tag(request.args.get("utm_campaign"), campaigns),
+        )
+
+    referrer = request.referrer
+    if not referrer:
+        return "direct", "", ""
+    host = (urlparse(referrer).hostname or "").lower().removeprefix("www.")
+    current_host = (request.host.split(":", 1)[0] or "").lower().removeprefix("www.")
+    if host == current_host:
+        return (
+            session.get("_traffic_source", "direct"),
+            session.get("_traffic_medium", ""),
+            session.get("_traffic_campaign", ""),
+        )
+    if host == "t.me" or host.endswith(".telegram.org") or host == "telegram.org":
+        return "telegram", "", ""
+    search_hosts = (
+        "google.", "bing.com", "duckduckgo.com", "search.yahoo.",
+        "yandex.", "baidu.com", "ecosia.org",
+    )
+    if any(host.startswith(prefix) or host.endswith(prefix) for prefix in search_hosts):
+        return "search", "", ""
+    return "referral", "", ""
+
+
+def _ensure_traffic_index():
+    global _traffic_indexes_ready
+    if _traffic_indexes_ready:
+        return
+    with _TRAFFIC_INDEX_LOCK:
+        if _traffic_indexes_ready:
+            return
+        _col("website_traffic_daily").create_index(
+            [("date", 1), ("source", 1), ("medium", 1), ("campaign", 1)]
+        )
+        _traffic_indexes_ready = True
+
+
+def _record_traffic_visit():
+    now = time.time()
+    previous = float(session.get("_traffic_last_seen", 0) or 0)
+    if now - previous >= 1800:
+        source, medium, campaign = _classify_traffic_source()
+        day = datetime.utcnow().strftime("%Y-%m-%d")
+        key = f"{day}|{source}|{medium}|{campaign}"
+        _ensure_traffic_index()
+        _col("website_traffic_daily").update_one(
+            {"_id": key},
+            {
+                "$setOnInsert": {
+                    "date": day, "source": source,
+                    "medium": medium, "campaign": campaign,
+                },
+                "$inc": {"visits": 1},
+            },
+            upsert=True,
+        )
+        session["_traffic_source"] = source
+        session["_traffic_medium"] = medium
+        session["_traffic_campaign"] = campaign
+    session["_traffic_last_seen"] = now
+
+
+def _verify_owner_webapp_init_data(init_data: str) -> bool:
+    owner_id = os.environ.get("SUPER_ADMIN_ID", "").strip()
+    if not BOT_TOKEN or not owner_id.isdigit() or not init_data or len(init_data) > 4096:
+        return False
+    pairs = parse_qsl(init_data, keep_blank_values=True)
+    if len({key for key, _ in pairs}) != len(pairs):
+        return False
+    values = dict(pairs)
+    received_hash = values.pop("hash", "")
+    if not re.fullmatch(r"[a-fA-F0-9]{64}", received_hash):
+        return False
+    try:
+        auth_date = int(values.get("auth_date", ""))
+    except (TypeError, ValueError):
+        return False
+    now = int(time.time())
+    if auth_date > now + 60 or now - auth_date > 600:
+        return False
+    data_check = "\n".join(f"{key}={value}" for key, value in sorted(values.items()))
+    secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+    expected_hash = hmac.new(
+        secret_key, data_check.encode(), hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected_hash, received_hash.lower()):
+        return False
+    try:
+        user = json.loads(values.get("user", "{}"))
+    except (TypeError, ValueError):
+        return False
+    return str(user.get("id", "")) == owner_id
+
+
+def _website_study_material_path(button: dict, buttons: dict) -> bool:
+    """Only expose counters under the bot's ملازم, books, and summaries folders."""
+    parent_id = button.get("parent_id")
+    visited = set()
+    allowed = {"ملازم", "ملزم", "ملزمة", "ملخص", "ملخصات", "كتاب", "كتب"}
+    while parent_id is not None and parent_id not in visited:
+        visited.add(parent_id)
+        parent = buttons.get(parent_id)
+        if not parent:
+            break
+        if parent.get("type") in {"menu", "compound"}:
+            words = set(_normalize_search_text(parent.get("label") or "").split())
+            stems = {word[2:] if word.startswith("ال") else word for word in words}
+            if stems & allowed:
+                return True
+        parent_id = parent.get("parent_id")
+    return False
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -775,6 +965,7 @@ def _independent_notes(btn: dict, items: list | None = None) -> list:
             "is_new": bool(added_at and time.time() - added_at < NEW_DAYS * 86400),
             "click_count": 0,
             "is_attachment": True,
+            "download_count": _attachment_download_count(btn["id"], item["id"]),
         })
     return cards
 
@@ -936,6 +1127,9 @@ def _similar_attachments(selected: dict, limit: int = 6) -> list:
                 "display_label": title,
                 "subtitle": _attachment_search_subtitle(item, record["label"]),
                 "is_new": bool(added_at and time.time() - added_at < NEW_DAYS * 86400),
+                "download_count": _attachment_download_count_from_record(
+                    record, item["id"]
+                ),
                 "_score": (same_button, same_teacher, same_parent, shared_topics),
                 "_sort": _item_sort_key(item),
             })
@@ -1067,11 +1261,13 @@ def _search_index_records() -> list:
                     and not _file_items(items)):
                 continue
             label = str(btn.get("label") or "")
+            download_tracking = _website_study_material_path(btn, visible_buttons)
             if _file_items(items):
                 attachment_records.append({
                     "button": btn, "items": items, "label": label,
                     "study_stage": study_stage,
                     "answer_context": model_context,
+                    "download_tracking": download_tracking,
                 })
             normalized_label = _normalize_search_text(label)
             normalized_item_texts = [
@@ -1102,6 +1298,7 @@ def _search_index_records() -> list:
                 "normalized_label": normalized_label,
                 "normalized_item_texts": normalized_item_texts,
                 "aggregate_normalized": aggregate_normalized,
+                "download_tracking": download_tracking,
             })
             records[-1]["search_context"] = " ".join(context)
 
@@ -1217,6 +1414,9 @@ def _record_search_documents(record: dict, attachment_paths: dict | None = None)
                     "is_new": False,
                     "click_count": 0,
                     "is_attachment": True,
+                    "download_count": _attachment_download_count_from_record(
+                        record, item["id"]
+                    ),
                 },
             })
     else:
@@ -1339,6 +1539,9 @@ def _build_latest_notes() -> list:
                     ),
                     "click_count": 0,
                     "is_attachment": True,
+                    "download_count": _attachment_download_count_from_record(
+                        record, item["id"]
+                    ),
                     "_dedupe_key": ("file", item["file_id"]),
                     "_sort": _item_sort_key(item),
                 })
@@ -1396,8 +1599,10 @@ def create_app() -> Flask:
     @app.context_processor
     def website_navigation():
         return {
-            # API error pages must not query the catalogue to report an error.
-            "navigation_grades": [] if request.path.startswith("/api/") else _website_grades(),
+            # API/admin pages should not query the public catalogue just to render navigation.
+            "navigation_grades": [] if (
+                request.path.startswith("/api/") or request.path.startswith("/admin/")
+            ) else _website_grades(),
             "navigation_bot_username": BOT_USERNAME,
         }
 
@@ -1411,6 +1616,116 @@ def create_app() -> Flask:
                 status=503,
                 mimetype="text/plain",
             )
+
+    @app.after_request
+    def record_anonymous_website_visit(response):
+        if (
+            request.method == "GET"
+            and response.status_code < 400
+            and response.mimetype == "text/html"
+            and not request.path.startswith(("/api/", "/admin/", "/static/"))
+        ):
+            try:
+                _record_traffic_visit()
+            except Exception:
+                app.logger.warning("Could not update anonymous traffic totals")
+        return response
+
+    @app.get("/admin/stats")
+    def admin_stats():
+        response = Response(
+            render_template("admin_stats.html", site_name=SITE_NAME),
+            mimetype="text/html",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.post("/api/admin/stats/auth")
+    def admin_stats_auth():
+        data = request.get_json(silent=True) or {}
+        if not _verify_owner_webapp_init_data(data.get("initData", "")):
+            session.pop("_stats_owner_authenticated_at", None)
+            return jsonify(error="owner_authentication_required"), 403
+        session["_stats_owner_authenticated_at"] = int(time.time())
+        response = jsonify(authenticated=True)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/admin/stats/summary")
+    def admin_stats_summary():
+        auth_at = int(session.get("_stats_owner_authenticated_at") or 0)
+        now = int(time.time())
+        if not auth_at or now - auth_at > 900 or auth_at > now + 60:
+            session.pop("_stats_owner_authenticated_at", None)
+            return jsonify(error="owner_authentication_required"), 401
+
+        start_day = (datetime.utcnow().date() - timedelta(days=29)).isoformat()
+        traffic_rows = list(_col("website_traffic_daily").find(
+            {"date": {"$gte": start_day}}
+        ))
+        source_totals = {}
+        daily_totals = {}
+        source_details = {}
+        for row in traffic_rows:
+            source = row.get("source", "direct")
+            visits = max(0, int(row.get("visits") or 0))
+            source_totals[source] = source_totals.get(source, 0) + visits
+            day = row.get("date", "")
+            daily_totals[day] = daily_totals.get(day, 0) + visits
+            detail_key = (
+                source, row.get("medium", ""), row.get("campaign", "")
+            )
+            source_details[detail_key] = source_details.get(detail_key, 0) + visits
+
+        download_rows = list(_col("item_download_stats").find({}))
+        download_rows.sort(
+            key=lambda row: max(0, int(row.get("count") or 0)), reverse=True
+        )
+        download_total = sum(max(0, int(row.get("count") or 0)) for row in download_rows)
+        top_downloads = []
+        for row in download_rows[:10]:
+            item = _col("content_items").find_one({"id": row.get("item_id")}) or {}
+            button = _col("buttons").find_one({"id": item.get("button_id")}) or {}
+            label = (
+                item.get("file_name") or item.get("filename") or item.get("name")
+                or item.get("content") or button.get("label") or "ملف"
+            )
+            label = re.sub(r"\s+", " ", str(label)).strip()[:100]
+            parent_label = str(button.get("label") or "").strip()
+            if parent_label and parent_label not in label:
+                label = f"{label} — {parent_label}"[:140]
+            top_downloads.append({
+                "label": label,
+                "downloads": max(0, int(row.get("count") or 0)),
+            })
+
+        response = jsonify(
+            period_days=30,
+            total_visits=sum(source_totals.values()),
+            visits_by_source=[
+                {"source": source, "visits": visits}
+                for source, visits in sorted(
+                    source_totals.items(), key=lambda pair: pair[1], reverse=True
+                )
+            ],
+            daily_visits=[
+                {"date": day, "visits": visits}
+                for day, visits in sorted(daily_totals.items(), reverse=True)
+            ],
+            source_details=[
+                {
+                    "source": key[0], "medium": key[1], "campaign": key[2],
+                    "visits": visits,
+                }
+                for key, visits in sorted(
+                    source_details.items(), key=lambda pair: pair[1], reverse=True
+                )
+            ],
+            total_bot_downloads=download_total,
+            top_downloads=top_downloads,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.post("/api/telegram-download-handoffs")
     def create_telegram_download_handoff():
@@ -1682,6 +1997,9 @@ def create_app() -> Flask:
             bot_download_target=encode_delivery_target(
                 selected["button"]["id"], item["id"]
             ),
+            download_count=_attachment_download_count_from_record(
+                record, item["id"]
+            ),
             bot_username=BOT_USERNAME,
             site_name=SITE_NAME,
             title=f"{display_label} | {SITE_NAME}",
@@ -1774,6 +2092,7 @@ def create_app() -> Flask:
                 "label": result["display_label"],
                 "url": result["url"],
                 "subtitle": result.get("subtitle", ""),
+                "download_count": result.get("download_count"),
             }
             for result in _search_content(q, limit=15)
         ])

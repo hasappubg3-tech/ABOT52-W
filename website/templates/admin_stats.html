@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<main class="container" dir="rtl" style="max-width:960px;padding-top:2rem;padding-bottom:3rem">
+  <header style="margin-bottom:1.5rem">
+    <p class="navigation-eyebrow">لوحة خاصة بمالك الموقع</p>
+    <h1 class="detail-title">إحصائيات الموقع</h1>
+    <p id="stats-status" role="status" aria-live="polite">جارٍ التحقق من حساب تيليگرام…</p>
+  </header>
+
+  <section id="stats-content" hidden>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:1rem;margin-bottom:1.5rem">
+      <article class="note-card" style="padding:1.2rem;display:block">
+        <h2 style="font-size:1rem">الزيارات خلال 30 يوماً</h2>
+        <strong id="total-visits" style="font-size:1.8rem">—</strong>
+      </article>
+      <article class="note-card" style="padding:1.2rem;display:block">
+        <h2 style="font-size:1rem">تحميلات البوت الكلية</h2>
+        <strong id="total-downloads" style="font-size:1.8rem">—</strong>
+      </article>
+    </div>
+
+    <section class="note-card" style="padding:1.2rem;display:block;margin-bottom:1.5rem">
+      <h2>مصادر الزيارات</h2>
+      <div id="source-list"></div>
+    </section>
+
+    <section class="note-card" style="padding:1.2rem;display:block;margin-bottom:1.5rem">
+      <h2>تفاصيل المصادر والحملات</h2>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;text-align:right">
+          <thead><tr><th>المصدر</th><th>الوسيط</th><th>الحملة</th><th>الزيارات</th></tr></thead>
+          <tbody id="source-details"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="note-card" style="padding:1.2rem;display:block;margin-bottom:1.5rem">
+      <h2>أكثر الملفات تحميلاً من البوت</h2>
+      <ol id="top-downloads"></ol>
+    </section>
+
+    <section class="note-card" style="padding:1.2rem;display:block">
+      <h2>الزيارات حسب اليوم</h2>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;text-align:right">
+          <thead><tr><th>التاريخ</th><th>الزيارات</th></tr></thead>
+          <tbody id="daily-visits"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='js/admin-stats.js') }}" defer></script>
+{% endblock %}

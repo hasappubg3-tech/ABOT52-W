@@ -82,6 +82,8 @@ class SelectedFileDeliveryTests(unittest.IsolatedAsyncioTestCase):
                 "get_items_user": Mock(return_value=self.files),
                 "get_items": Mock(return_value=self.files),
                 "get_btn": Mock(return_value=self.button),
+                "_is_study_material_button": Mock(return_value=True),
+                "increment_item_download_count": Mock(),
                 "inc_click_count": Mock(),
                 "get_user_ratings_hidden": Mock(return_value=True),
                 "get_global_caption": Mock(return_value=""),
@@ -267,6 +269,27 @@ class SelectedFileDeliveryTests(unittest.IsolatedAsyncioTestCase):
         await delivery.deliver_denied_content(self.bot, 777, "10_2")
         self.bot.send_document.assert_awaited_once_with(
             chat_id=777, document="second-file", caption="الجزء الثاني")
+        delivery.increment_item_download_count.assert_called_once_with(2)
+
+    async def test_only_successful_student_document_sends_are_counted(self):
+        await delivery.send_items(
+            self.message, 10, uid=99, bot=self.bot, item_id=1
+        )
+        delivery.increment_item_download_count.assert_called_once_with(1)
+
+        delivery.increment_item_download_count.reset_mock()
+        self.message.reply_document.side_effect = RuntimeError("send failed")
+        await delivery.send_items(
+            self.message, 10, uid=99, bot=self.bot, item_id=1
+        )
+        delivery.increment_item_download_count.assert_not_called()
+
+    async def test_non_study_sections_are_not_counted(self):
+        delivery._is_study_material_button.return_value = False
+        await delivery.send_items(
+            self.message, 10, uid=99, bot=self.bot, item_id=1
+        )
+        delivery.increment_item_download_count.assert_not_called()
 
     async def test_missing_delayed_file_never_sends_the_rest_of_the_button(self):
         await delivery.deliver_denied_content(self.bot, 777, "10_999")

@@ -151,7 +151,10 @@
         const subtitle = item.subtitle
           ? `<span class="search-result-subtitle">${escHtml(item.subtitle)}</span>`
           : '';
-        return `<a class="search-result-item" href="${escHtml(item.url)}"><span>${escHtml(item.label)}</span>${subtitle}</a>`;
+        const downloads = item.download_count !== null && item.download_count !== undefined
+          ? `<span class="search-result-subtitle">📥 ${escHtml(item.download_count)} تحميل</span>`
+          : '';
+        return `<a class="search-result-item" href="${escHtml(item.url)}"><span>${escHtml(item.label)}</span>${subtitle}${downloads}</a>`;
       }).join('') +
       (items.length >= 15
         ? `<a class="search-result-item" href="/search?q=${encodeURIComponent(q)}" style="color:var(--gold);text-align:center">عرض كل النتائج ←</a>`

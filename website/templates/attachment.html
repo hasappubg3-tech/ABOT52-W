@@ -31,6 +31,9 @@
       {% if subtitle %}
       <p class="attachment-page-meta">{{ subtitle | strip_emoji }}</p>
       {% endif %}
+      {% if download_count is not none %}
+      <p class="attachment-page-meta">📥 {{ download_count }} تحميل من البوت</p>
+      {% endif %}
       <div class="detail-actions">
         <a href="{{ bot_deep_link }}" target="_blank" rel="noopener noreferrer"
            data-telegram-handoff-target="{{ bot_download_target }}"
@@ -62,6 +65,13 @@
           {% if file.subtitle %}
           <div class="note-meta">
             <span class="meta-item">{{ file.subtitle | strip_emoji }}</span>
+            {% if file.download_count is not none %}
+            <span class="meta-item">📥 <span class="meta-val">{{ file.download_count }}</span> تحميل</span>
+            {% endif %}
+          </div>
+          {% elif file.download_count is not none %}
+          <div class="note-meta">
+            <span class="meta-item">📥 <span class="meta-val">{{ file.download_count }}</span> تحميل</span>
           </div>
           {% endif %}
           <div class="note-actions">

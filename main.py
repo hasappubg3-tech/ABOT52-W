@@ -65,6 +65,7 @@ def main():
                     filters.VIDEO | filters.AUDIO | filters.VOICE) & ~filters.COMMAND
 
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("webstats", cmd_webstats))
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("storage_status", cmd_storage_status))
     app.add_handler(CommandHandler("repair_storage", cmd_repair_storage))
