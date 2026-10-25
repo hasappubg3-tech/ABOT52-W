@@ -22,6 +22,8 @@ _FORWARD_MATCH_TTL = 24 * 60 * 60
 _OWNER_MESSAGE_HISTORY_LIMIT = 200
 _STATE_KEY = "bot_emoji_customization"
 _CUSTOM_EMOJI = getattr(MessageEntity, "CUSTOM_EMOJI", "custom_emoji")
+_COMMENT_ADD_PROMPT_KEY = "comment:add_prompt"
+_COMMENT_ADD_PROMPT_NORMALIZED = "<emoji> أرسل تعليقك الآن (نص فقط):"
 _UI_PREFIX = "🛠 تخصيص الإيموجي:"
 
 _UI_PREFIXES = (
@@ -53,6 +55,13 @@ def is_emoji_change_command(text):
     }
 
 
+def _normalized_template_text(text, entities=None):
+    normalized = text
+    for span in reversed(emoji_occurrences(text, entities)):
+        normalized = normalized[:span["start"]] + "<emoji>" + normalized[span["end"]:]
+    return re.sub(r"\d+", "#", normalized)
+
+
 def _template_key(text, entities=None):
     lines = text.split("\n")
     if any("عدد التقييمات:" in line for line in lines):
@@ -61,10 +70,9 @@ def _template_key(text, entities=None):
                 return f"rating:item:{index}"
             if "تقييم المحتوى:" in line:
                 return f"rating:button:{index}"
-    normalized = text
-    for span in reversed(emoji_occurrences(text, entities)):
-        normalized = normalized[:span["start"]] + "<emoji>" + normalized[span["end"]:]
-    normalized = re.sub(r"\d+", "#", normalized)
+    normalized = _normalized_template_text(text, entities)
+    if normalized == _COMMENT_ADD_PROMPT_NORMALIZED:
+        return _COMMENT_ADD_PROMPT_KEY
     return "message:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
@@ -241,6 +249,14 @@ def _load_overrides():
     values = {}
     for row in _collection().find({}, {"_id": 1, "occurrences": 1, "buttons": 1}):
         values[row["_id"]] = row
+    # Keep an emoji choice saved before this shared key existed.
+    legacy_comment_key = "message:" + hashlib.sha256(
+        _COMMENT_ADD_PROMPT_NORMALIZED.encode("utf-8")
+    ).hexdigest()
+    if legacy_comment_key in values and _COMMENT_ADD_PROMPT_KEY not in values:
+        values[_COMMENT_ADD_PROMPT_KEY] = {
+            **values[legacy_comment_key], "_id": _COMMENT_ADD_PROMPT_KEY,
+        }
     _OVERRIDE_CACHE.update(values=values, expires=now + _OVERRIDE_TTL)
     return values
 

@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import unittest
 from types import SimpleNamespace
@@ -80,6 +81,33 @@ class EmojiCustomizationTests(unittest.TestCase):
             custom._template_key("⭐ تقييم الملف: 0\n👥 عدد التقييمات: 0"),
             custom._template_key("🔥 تقييم الملف: 4.5\n👥 عدد التقييمات: 22"),
         )
+
+    def test_comment_add_prompt_shares_emoji_and_migrates_its_old_saved_override(self):
+        prompt = "✏️ أرسل تعليقك الآن (نص فقط):"
+        self.assertEqual(
+            custom._template_key(prompt),
+            custom._template_key("🔥 أرسل تعليقك الآن (نص فقط):"),
+        )
+
+        legacy_key = "message:" + hashlib.sha256(
+            "<emoji> أرسل تعليقك الآن (نص فقط):".encode("utf-8")
+        ).hexdigest()
+        overrides = MemoryOverrides()
+        overrides.rows[legacy_key] = {
+            "_id": legacy_key,
+            "occurrences": {
+                "0": {"0": {"glyph": "🎯", "custom_emoji_id": ""}},
+            },
+        }
+        with patch.object(custom, "_collection", return_value=overrides), \
+                patch.object(custom, "_OVERRIDE_CACHE", {"expires": 0.0, "values": {}}):
+            loaded = custom._load_overrides()
+            self.assertIn(custom._COMMENT_ADD_PROMPT_KEY, loaded)
+            updated, _, _ = custom._apply_saved_overrides(SimpleNamespace(
+                text="🔥 أرسل تعليقك الآن (نص فقط):",
+                entities=[], reply_markup=None,
+            ))
+        self.assertEqual(updated, "🎯 أرسل تعليقك الآن (نص فقط):")
 
     def test_custom_button_icon_preserves_action_and_future_item_ids(self):
         async def run_flow():
