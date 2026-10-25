@@ -1,7 +1,10 @@
 from .download_targets import parse_delivery_target
+from .emoji_customization import handle_owner_emoji_callback
 from .shared import *
 
 async def cb_manage(update: Update, ctx):
+    if await handle_owner_emoji_callback(update, ctx):
+        return
     q = update.callback_query
     uid = q.from_user.id
     d = q.data

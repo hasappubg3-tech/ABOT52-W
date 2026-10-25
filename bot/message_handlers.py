@@ -1,5 +1,9 @@
 import re
 from pymongo import ReturnDocument
+from .emoji_customization import (
+    begin_emoji_customization, handle_owner_emoji_input,
+    is_emoji_change_command, is_private_owner_message,
+)
 from .download_targets import parse_delivery_target
 from .shared import *
 
@@ -465,6 +469,17 @@ async def on_message(update: Update, ctx):
     pid = ctx.user_data.get("pid")
     chat_id = m.chat_id
 
+    if (is_emoji_change_command(raw_text)
+            and is_private_owner_message(uid, chat_id, m.chat.type)):
+        await begin_emoji_customization(
+            ctx.bot, uid, chat_id, m.chat.type, ctx.user_data, m.reply_to_message,
+        )
+        return
+    if await handle_owner_emoji_input(
+        m, ctx.bot, uid, chat_id, m.chat.type, ctx.user_data,
+    ):
+        return
+
     permission = admin_state_permission(state)
     if permission and not has_permission(uid, permission):
         ctx.user_data.pop("state", None)
@@ -503,7 +518,8 @@ async def on_message(update: Update, ctx):
         state = None
 
     # ── حفظ إيموجي متحرك تلقائياً (للمشرفين — في أي حالة، بصمت) ──
-    if has_permission(uid, "bot_settings") and state != "wait_emoji_num":
+    if has_permission(uid, "bot_settings") and state not in {
+            "wait_emoji_num", "wait_custom_emoji"}:
         _all_ents = list(m.entities or []) + list(m.caption_entities or [])
         _custom = [e for e in _all_ents
                    if e.type == MessageEntity.CUSTOM_EMOJI and e.custom_emoji_id]
