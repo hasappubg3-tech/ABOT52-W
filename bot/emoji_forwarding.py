@@ -1,24 +1,53 @@
 """Owner-only forwarding shortcut; independent of simulated student permissions."""
 
+from collections.abc import Mapping
+
+from telegram.ext import filters
+
 from .emoji_customization import (
     _template_key, begin_emoji_customization, is_private_owner_message,
 )
 
 
+def _field(value, name, default=None):
+    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)
+
+
+def forward_origin(message):
+    # PTB 20.7 preserves newer Bot API fields here instead of creating attributes.
+    return (getattr(message, "forward_origin", None)
+            or (getattr(message, "api_kwargs", None) or {}).get("forward_origin"))
+
+
+def is_forwarded(message):
+    return bool(
+        forward_origin(message)
+        or getattr(message, "forward_from", None)
+        or getattr(message, "forward_date", None)
+    )
+
+
+class ForwardOriginFilter(filters.MessageFilter):
+    """Also accept forwards whose modern metadata is unknown to older PTB."""
+
+    def filter(self, message):
+        return is_forwarded(message)
+
+
 async def handle_forwarded_emoji_message(message, bot, uid, chat_id, chat_type, user_data):
-    origin = getattr(message, "forward_origin", None)
+    origin = forward_origin(message)
     legacy_sender = getattr(message, "forward_from", None)
-    if not origin and not legacy_sender and not getattr(message, "forward_date", None):
+    if not is_forwarded(message):
         return False
     if not is_private_owner_message(uid, chat_id, chat_type):
         return False
 
-    sender = getattr(origin, "sender_user", None) if origin else legacy_sender
+    sender = _field(origin, "sender_user") if origin else legacy_sender
     try:
         current_bot_id = getattr(bot, "id", None)
     except RuntimeError:
         current_bot_id = None
-    if not current_bot_id or getattr(sender, "id", None) != current_bot_id:
+    if not current_bot_id or str(_field(sender, "id")) != str(current_bot_id):
         # Other forwarded files must retain their normal upload/content workflow.
         return False
 

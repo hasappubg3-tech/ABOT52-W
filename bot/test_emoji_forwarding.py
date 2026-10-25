@@ -4,10 +4,11 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from telegram import Message, Update
 from telegram.ext import ExtBot
 
 from bot import emoji_customization as custom
-from bot.emoji_forwarding import handle_forwarded_emoji_message
+from bot.emoji_forwarding import ForwardOriginFilter, handle_forwarded_emoji_message
 from bot.loader import load_bot_symbols
 from bot.test_emoji_customization import FakeBot, FakeQuery, MemoryOverrides
 
@@ -27,6 +28,55 @@ def forwarded_message(owner=123, source_bot=888, text="⭐ تقييم الملف
 
 
 class EmojiForwardingTests(unittest.TestCase):
+    def test_modern_forward_metadata_from_real_telegram_deserialization(self):
+        async def run_check():
+            bot = FakeBot()
+            bot.id = 888
+            message = Message.de_json({
+                "message_id": 900, "date": 1792923000,
+                "chat": {"id": 123, "type": "private"},
+                "from": {"id": 123, "is_bot": False, "first_name": "Owner"},
+                "text": "⭐ تقييم الملف: 0\n👥 عدد التقييمات: 0",
+                "forward_origin": {
+                    "type": "user", "date": 1792922000,
+                    "sender_user": {"id": 888, "is_bot": True, "first_name": "Test Bot"},
+                },
+            }, bot)
+            self.assertTrue(ForwardOriginFilter().filter(message))
+            data = {"state": "wait_edit_label"}
+            update = Update(update_id=1, message=message)
+            context = SimpleNamespace(bot=bot, user_data=data)
+            self.assertTrue(ForwardOriginFilter().check_update(update))
+            with patch.dict(os.environ, {"SUPER_ADMIN_ID": "123"}), \
+                    patch.object(custom, "_load_overrides", return_value={}), \
+                    patch.object(message_handlers, "has_permission", return_value=False) as permission:
+                await message_handlers.on_message(update, context)
+                permission.assert_not_called()
+            self.assertEqual(data["bot_emoji_customization"]["target"]["text"], message.text)
+        asyncio.run(run_check())
+
+    def test_modern_nontext_forward_passes_filter_and_foreign_bot_is_ignored(self):
+        async def run_check():
+            bot = SimpleNamespace(id=888, send_message=AsyncMock())
+            message = Message.de_json({
+                "message_id": 900, "date": 1792923000,
+                "chat": {"id": 123, "type": "private"},
+                "from": {"id": 123, "is_bot": False, "first_name": "Owner"},
+                "caption": "📚 وصف الملزمة",
+                "forward_origin": {
+                    "type": "user", "date": 1792922000,
+                    "sender_user": {"id": 999, "is_bot": True, "first_name": "Other Bot"},
+                },
+            }, None)
+            self.assertTrue(ForwardOriginFilter().filter(message))
+            with patch.dict(os.environ, {"SUPER_ADMIN_ID": "123"}):
+                result = await handle_forwarded_emoji_message(
+                    message, bot, 123, 123, message.chat.type, {},
+                )
+            self.assertFalse(result)
+            bot.send_message.assert_not_called()
+        asyncio.run(run_check())
+
     def test_forwarding_opens_editor_before_preview_permission_checks_and_saves(self):
         async def run_flow():
             bot = FakeBot()
