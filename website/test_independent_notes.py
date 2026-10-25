@@ -30,7 +30,10 @@ class IndependentNotesTests(unittest.TestCase):
             "id": 10, "parent_id": 5, "type": "content",
             "label": "ملزمة الفيزياء 2026",
         }
-        self.parent = {"id": 5, "parent_id": 1, "type": "menu", "label": "الفيزياء"}
+        self.parent = {
+            "id": 5, "parent_id": 1, "type": "menu", "label": "الفيزياء",
+            "sort_demand": 0,
+        }
         self.files = [
             {"id": 1, "button_id": 10, "type": "document",
              "file_id": "first-pdf", "caption": "ملزمة الفيزياء الجزء الأول 2025"},

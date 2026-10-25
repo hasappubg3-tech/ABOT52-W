@@ -503,6 +503,35 @@ def _children(pid):
     buttons = _col("buttons").find(q).sort([("ord", 1), ("id", 1)])
     return [button for button in buttons if not _is_bot_only_entry(button)]
 
+
+def _menu_sort_by_demand(button: dict) -> bool:
+    """Mirror the bot's demand-sort toggle and legacy materials-menu default."""
+    if not button or button.get("type") != "menu":
+        return False
+    if "sort_demand" in button:
+        return bool(button["sort_demand"])
+    parent_id = button.get("parent_id")
+    if parent_id is None:
+        return False
+    parent = _col("buttons").find_one({"id": parent_id}, {"label": 1}) or {}
+    return "ملازم" in str(parent.get("label") or "").replace("\u0640", "")
+
+
+def _sort_category_children_by_demand(parent: dict, children: list) -> list:
+    """Use the same student button-press ranking as Telegram when enabled."""
+    if not _menu_sort_by_demand(parent) or len(children) < 2:
+        return children
+
+    def demand_count(button):
+        try:
+            return int(button.get("demand_clicks") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    # Python's sort is stable, so ties retain the bot's existing manual order.
+    return sorted(children, key=demand_count, reverse=True)
+
+
 def _website_grades():
     """Flatten visible stage folders without changing the underlying bot tree."""
     if has_request_context() and hasattr(g, "website_grades"):
@@ -1910,6 +1939,7 @@ def create_app() -> Flask:
             children = [btn]
         else:
             children = _children(bid)
+        children = _sort_category_children_by_demand(btn, children)
         if btn.get("type") == "compound" and btn.get("sort_by_year", 0):
             children = sorted(children, key=_compound_sort_key)
         # A grade can live inside a bot stage folder, not only at the root.
